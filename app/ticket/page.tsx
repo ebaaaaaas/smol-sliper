@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 type Status = "idle" | "processing" | "success" | "error";
 
-export default function TicketPage() {
+function TicketPageInner() {
   const searchParams = useSearchParams();
   const uuid = searchParams.get("t") || undefined;
 
@@ -118,5 +118,22 @@ export default function TicketPage() {
         Покажи этот экран бармену. Скриншоты не канают.
       </p>
     </div>
+  );
+}
+
+export default function TicketPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-black text-white">
+          <div className="text-center space-y-2">
+            <h1 className="text-xl font-semibold">Загружаю билет…</h1>
+            <p className="text-sm opacity-70">Почти готово.</p>
+          </div>
+        </div>
+      }
+    >
+      <TicketPageInner />
+    </Suspense>
   );
 }
