@@ -14,7 +14,6 @@ export async function POST(req: NextRequest) {
     }
 
     if (!N8N_WEBHOOK_URL) {
-      // Локально, если забыли настроить .env
       return NextResponse.json(
         { ok: false, error: "WEBHOOK_NOT_CONFIGURED" },
         { status: 500 }
@@ -27,16 +26,49 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({ uuid }),
     });
 
-    const data = await n8nRes.json().catch(() => ({}));
+    const raw = await n8nRes.text();
 
-    if (!n8nRes.ok) {
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      // ответ не JSON — оставим raw как есть
+    }
+
+    // ---- Достаём result из ответа n8n ----
+    let result: string | undefined;
+
+    if (Array.isArray(parsed) && parsed[0]?.result) {
+      // классический ответ Postgres-ноды / responseNode
+      result = parsed[0].result;
+    } else if (parsed && typeof parsed === "object" && "result" in parsed) {
+      result = (parsed as any).result;
+    }
+
+    // Успех только если:
+    // - HTTP 200
+    // - и result === "success" (или result отсутствует вообще)
+    const isSuccess =
+      n8nRes.ok && (result === "success" || result === undefined);
+
+    if (!isSuccess) {
+      const errorMessage =
+        (parsed && parsed.error) ||
+        result ||
+        raw ||
+        `REDEEM_FAILED_${n8nRes.status}`;
+
       return NextResponse.json(
-        { ok: false, error: (data as any).error || "REDEEM_FAILED" },
+        { ok: false, error: errorMessage },
         { status: 400 }
       );
     }
 
-    return NextResponse.json({ ok: true, data });
+    return NextResponse.json({
+      ok: true,
+      result: result ?? "success",
+      data: parsed ?? raw,
+    });
   } catch (e) {
     console.error("REDEEM_ERROR", e);
     return NextResponse.json(
