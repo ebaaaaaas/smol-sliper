@@ -13,7 +13,7 @@ function TicketPageInner() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [timer, setTimer] = useState<number>(15); // визуальный таймер
 
-  // Визуальный таймер (чисто антураж, не блокирующий)
+  // Таймер — чисто визуальный, не блокирует гашение
   useEffect(() => {
     if (status !== "idle") return;
     if (timer <= 0) return;
@@ -22,12 +22,13 @@ function TicketPageInner() {
     return () => clearTimeout(id);
   }, [timer, status]);
 
+  // Если нет uuid — сразу ошибка
   if (!uuid) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-red-950 text-white">
+      <div className="min-h-screen flex items-center justify-center bg-white text-zinc-900">
         <div className="text-center space-y-3 px-6">
-          <h1 className="text-2xl font-bold">Билет не найден</h1>
-          <p className="opacity-75 text-sm">
+          <h1 className="text-2xl font-semibold">Билет не найден</h1>
+          <p className="text-sm text-zinc-500">
             Неверная или устаревшая ссылка. Попроси новый дроп.
           </p>
         </div>
@@ -67,122 +68,103 @@ function TicketPageInner() {
     }
   };
 
-  // Успешное гашение
-  if (status === "success") {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-green-950 text-emerald-50">
-        <div className="text-center space-y-4 px-6">
-          <div className="text-xs tracking-[0.25em] uppercase opacity-60">
-            SMOL.DROP
-          </div>
-          <h1 className="text-3xl font-extrabold">Билет погашен</h1>
-          <p className="opacity-80 text-sm">Этот заказ можно отдать гостю.</p>
-        </div>
-      </div>
-    );
+  // Цвет кнопки в зависимости от статуса
+  let buttonColor =
+    "bg-pink-500 hover:bg-pink-600 text-white shadow-[0_18px_45px_rgba(236,72,153,0.45)]";
+  if (status === "processing") {
+    buttonColor =
+      "bg-amber-400 hover:bg-amber-500 text-zinc-900 shadow-[0_18px_45px_rgba(251,191,36,0.45)]";
+  } else if (status === "success") {
+    buttonColor =
+      "bg-emerald-500 hover:bg-emerald-600 text-white shadow-[0_18px_45px_rgba(16,185,129,0.45)]";
+  } else if (status === "error") {
+    buttonColor =
+      "bg-red-500 hover:bg-red-600 text-white shadow-[0_18px_45px_rgba(239,68,68,0.45)]";
   }
 
-  // Ошибка при гашении
-  if (status === "error") {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-red-950 text-red-50">
-        <div className="text-center space-y-4 px-6 mt-4">
-          <div className="text-xs tracking-[0.25em] uppercase opacity-60">
-            SMOL.DROP
-          </div>
-          <h1 className="text-2xl font-extrabold">Ошибка билета</h1>
-          <p className="opacity-80 text-sm">{errorMsg}</p>
-        </div>
-        <button
-          className="mt-10 px-7 py-3 rounded-full border border-red-200/50 bg-red-900/60 text-sm uppercase tracking-wide backdrop-blur disabled:opacity-40"
-          onClick={handleRedeem}
-        >
-          Попробовать ещё раз
-        </button>
-      </div>
-    );
-  }
+  const isDisabled = status === "processing" || status === "success";
 
-  // Основной экран билета
+  const timerLabel = `00:${Math.max(timer, 0)
+    .toString()
+    .padStart(2, "0")}`;
+
+  let caption = "Погасить билет";
+  if (status === "processing") caption = "Гашу билет…";
+  if (status === "success") caption = "Билет погашен";
+  if (status === "error") caption = "Ошибка, попробуй ещё раз";
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-black via-slate-950 to-zinc-900 text-white">
-      {/* Верхний бар / бренд */}
-      <div className="absolute top-6 inset-x-0 flex justify-center">
-        <div className="px-4 py-2 rounded-full border border-white/10 bg-black/40 backdrop-blur flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-xs tracking-[0.25em] uppercase opacity-70">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-white text-zinc-900 px-6">
+      {/* Логотип сверху */}
+      <div className="absolute top-8 inset-x-0 flex justify-center">
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-zinc-200 bg-zinc-50">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-[11px] tracking-[0.25em] uppercase text-zinc-500">
             SMOL.DROP
           </span>
         </div>
       </div>
 
-      {/* Билет */}
-      <div className="w-full max-w-sm px-6">
-        <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-2xl overflow-hidden relative">
-          {/* Живой фон */}
-          <div className="absolute inset-0 opacity-60 mix-blend-screen pointer-events-none">
-            <div className="w-full h-full bg-[radial-gradient(circle_at_0%_0%,rgba(94,234,212,0.35),transparent_50%),radial-gradient(circle_at_100%_100%,rgba(56,189,248,0.35),transparent_55%)] animate-pulse" />
+      {/* Основной контейнер */}
+      <div className="w-full max-w-sm flex flex-col items-center gap-6 mt-8">
+        <div className="text-center space-y-2">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400">
+            drop ticket
           </div>
+          <h1 className="text-xl font-semibold">Твой билет готов</h1>
+          <p className="text-xs text-zinc-500">
+            Нажимай кнопку только у стойки. После гашения цвет подскажет, что
+            делать дальше.
+          </p>
+        </div>
 
-          <div className="relative px-6 pt-6 pb-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <div className="text-[11px] uppercase tracking-[0.22em] opacity-70">
-                  drop ticket
-                </div>
-                <div className="text-lg font-semibold">Твой дроп-билет</div>
-              </div>
-              <div className="text-right">
-                <div className="text-[10px] uppercase opacity-60">
-                  Время на показ
-                </div>
-                <div className="font-mono text-sm">
-                  00:{timer.toString().padStart(2, "0")}
-                </div>
-              </div>
+        {/* Большая круглая кнопка с таймером */}
+        <button
+          onClick={handleRedeem}
+          disabled={isDisabled}
+          className={`
+            relative
+            w-52 h-52
+            rounded-full
+            flex flex-col items-center justify-center
+            ${buttonColor}
+            transition
+            active:scale-95
+            disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100
+          `}
+        >
+          {/* Внутренний круг для глубины */}
+          <div className="absolute inset-3 rounded-full bg-black/10" />
+
+          <div className="relative flex flex-col items-center justify-center gap-1">
+            <div className="text-[11px] uppercase tracking-[0.22em] opacity-80">
+              {status === "success"
+                ? "success"
+                : status === "error"
+                ? "error"
+                : "timer"}
             </div>
-
-            {/* Кружок-антискрин */}
-            <div className="flex justify-center py-3">
-              <div className="w-40 h-40 rounded-full border border-white/30 bg-black/40 flex items-center justify-center relative overflow-hidden">
-                <div className="absolute inset-[-40%] bg-[conic-gradient(from_0deg,rgba(56,189,248,0.2),rgba(94,234,212,0.5),rgba(248,250,252,0.3),rgba(56,189,248,0.2))] animate-[spin_6s_linear_infinite]" />
-                <div className="absolute inset-[18%] rounded-full bg-black/80 backdrop-blur" />
-                <div className="relative text-center space-y-1">
-                  <div className="text-[10px] tracking-[0.22em] uppercase opacity-70">
-                    LIVE
-                  </div>
-                  <div className="text-2xl font-bold">
-                    {status === "processing" ? "..." : "READY"}
-                  </div>
-                  <div className="text-[11px] opacity-60">
-                    UUID спрятан внутри
-                  </div>
-                </div>
-              </div>
+            <div className="text-4xl font-semibold tabular-nums">
+              {timerLabel}
             </div>
-
-            {/* Инфо-блок */}
-            <div className="text-[11px] leading-relaxed opacity-75 border-t border-white/10 pt-3">
-              Покажи этот экран бармену. Скриншоты не канают — билет живой и
-              меняется в реальном времени.
+            <div className="text-[11px] uppercase tracking-[0.22em] opacity-90">
+              {caption}
             </div>
           </div>
+        </button>
+
+        {/* Подпись и ошибка */}
+        <div className="text-center space-y-2">
+          <p className="text-[11px] text-zinc-500">
+            <span className="font-medium">Розовая</span> — билет активен.{" "}
+            <span className="font-medium">Зелёная</span> — можно отдать заказ.{" "}
+            <span className="font-medium">Красная</span> — билет недействителен.
+          </p>
+          {status === "error" && errorMsg && (
+            <p className="text-[11px] text-red-500">{errorMsg}</p>
+          )}
         </div>
       </div>
-
-      {/* Кнопка погасить */}
-      <button
-        onClick={handleRedeem}
-        disabled={status === "processing"}
-        className="mt-8 px-10 py-3 rounded-full border border-emerald-400/60 bg-emerald-500/20 text-sm font-semibold tracking-wide uppercase backdrop-blur hover:bg-emerald-500/30 disabled:opacity-50"
-      >
-        {status === "processing" ? "Гашу билет…" : "Тапни, чтобы погасить"}
-      </button>
-
-      <p className="mt-4 text-[11px] opacity-50 px-8 text-center">
-        После гашения билет загорится зелёным. Бармен увидит, что заказ уже
-        можно отдать.
-      </p>
     </div>
   );
 }
@@ -191,10 +173,10 @@ export default function TicketPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-black text-white">
+        <div className="min-h-screen flex items-center justify-center bg-white text-zinc-900">
           <div className="text-center space-y-2">
-            <h1 className="text-xl font-semibold">Загружаю билет…</h1>
-            <p className="text-sm opacity-70">Почти готово.</p>
+            <h1 className="text-lg font-medium">Загружаю билет…</h1>
+            <p className="text-sm text-zinc-500">Пара секунд.</p>
           </div>
         </div>
       }
