@@ -1,192 +1,157 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import React, { useState, useRef } from "react";
 
-type Status = "idle" | "processing" | "success" | "error";
+const HOLD_DURATION_MS = 800;
 
-function TicketPageInner() {
-  const searchParams = useSearchParams();
-  const uuid = searchParams.get("t") || undefined;
+type Status = "idle" | "holding" | "processing" | "success" | "error";
 
+export default function TicketPage() {
   const [status, setStatus] = useState<Status>("idle");
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [timer, setTimer] = useState<number>(60); // 60 секунд
+  const [message, setMessage] = useState("Удерживайте палец, чтобы погасить билет");
+  const holdTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Визуальный таймер
-  useEffect(() => {
-    if (status !== "idle") return;
-    if (timer <= 0) return;
-    const id = setTimeout(() => setTimer((t) => t - 1), 1000);
-    return () => clearTimeout(id);
-  }, [timer, status]);
+  const canInteract = status === "idle" || status === "holding";
 
-  if (!uuid) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-white text-black">
-        <div className="text-center">
-          <h1 className="text-xl font-semibold">Билет не найден</h1>
-          <p className="text-sm text-zinc-500">
-            Неверная или устаревшая ссылка.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const startHold = () => {
+    if (!canInteract) return;
 
-  const handleRedeem = async () => {
-    if (status === "processing" || status === "success") return;
+    setStatus("holding");
+    setMessage("Держите палец…");
+
+    if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current);
+
+    holdTimeoutRef.current = setTimeout(() => {
+      triggerRedeem();
+    }, HOLD_DURATION_MS);
+  };
+
+  const endHold = () => {
+    if (!canInteract) return;
+
+    if (holdTimeoutRef.current) {
+      clearTimeout(holdTimeoutRef.current);
+      holdTimeoutRef.current = null;
+    }
+
+    setStatus("idle");
+    setMessage("Удерживайте палец, чтобы погасить билет");
+  };
+
+  const triggerRedeem = async () => {
     setStatus("processing");
-    setErrorMsg(null);
+    setMessage("Гашение билета…");
 
     try {
-      const res = await fetch("/api/redeem", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uuid }),
-      });
+      // TODO: Вставь реальный API
+      await new Promise((r) => setTimeout(r, 800));
+      const ok = true;
 
-      const data = await res.json();
-
-      if (!res.ok || !data.ok) {
+      if (ok) {
+        setStatus("success");
+        setMessage("Билет погашен. Приятного аппетита!");
+      } else {
         setStatus("error");
-        setErrorMsg(
-          data.error ||
-            "Билет уже погашен или недействителен. Попроси бармена проверить."
-        );
-        return;
+        setMessage("Ошибка гашения. Обратитесь к персоналу.");
       }
-
-      setStatus("success");
     } catch {
       setStatus("error");
-      setErrorMsg("Не удалось связаться с сервером.");
+      setMessage("Ошибка соединения. Попробуйте ещё раз.");
     }
   };
 
-  // ---- ПАЛИТРЫ ДЛЯ GEL-КНОПКИ ----
-  // Внешний glow
-  let outerGlow =
-    "shadow-[0_0_80px_rgba(236,72,153,0.55)] bg-[radial-gradient(circle_at_30%_0%,rgba(255,255,255,0.5),transparent_55%),radial-gradient(circle_at_50%_120%,rgba(219,39,119,0.9),rgba(236,72,153,1))]";
-  // Внутренний залив
-  let innerFill =
-    "bg-[radial-gradient(circle_at_30%_0%,rgba(255,255,255,0.9),rgba(236,72,153,0.9))]";
-  if (status === "processing") {
-    outerGlow =
-      "shadow-[0_0_80px_rgba(245,158,11,0.55)] bg-[radial-gradient(circle_at_30%_0%,rgba(255,255,255,0.55),transparent_55%),radial-gradient(circle_at_50%_120%,rgba(234,179,8,0.9),rgba(251,191,36,1))]";
-    innerFill =
-      "bg-[radial-gradient(circle_at_30%_0%,rgba(255,255,255,0.9),rgba(251,191,36,0.9))]";
-  }
-  if (status === "success") {
-    outerGlow =
-      "shadow-[0_0_80px_rgba(16,185,129,0.55)] bg-[radial-gradient(circle_at_30%_0%,rgba(255,255,255,0.55),transparent_55%),radial-gradient(circle_at_50%_120%,rgba(22,163,74,0.9),rgba(16,185,129,1))]";
-    innerFill =
-      "bg-[radial-gradient(circle_at_30%_0%,rgba(255,255,255,0.9),rgba(16,185,129,0.9))]";
-  }
-  if (status === "error") {
-    outerGlow =
-      "shadow-[0_0_80px_rgba(239,68,68,0.55)] bg-[radial-gradient(circle_at_30%_0%,rgba(255,255,255,0.55),transparent_55%),radial-gradient(circle_at_50%_120%,rgba(220,38,38,0.9),rgba(239,68,68,1))]";
-    innerFill =
-      "bg-[radial-gradient(circle_at_30%_0%,rgba(255,255,255,0.9),rgba(239,68,68,0.9))]";
-  }
-
-  const timeLabel = `00:${Math.max(timer, 0)
-    .toString()
-    .padStart(2, "0")}`;
-
-  let actionLabel = "ПОГАСИТЬ БИЛЕТ";
-  if (status === "processing") actionLabel = "Гашу…";
-  if (status === "success") actionLabel = "ГОТОВО";
-  if (status === "error") actionLabel = "ОШИБКА";
-
-  let bottomNote = "Розовый шар — билет активен.";
-  if (status === "success") bottomNote = "Зелёный шар — приятного аппетита.";
-  if (status === "error") bottomNote = "Красный шар — билет уже использовали.";
-
-  const disabled = status === "processing" || status === "success";
+  const bgClass =
+    status === "success"
+      ? "bg-[#1f8a42]"
+      : status === "error"
+      ? "bg-[#8b0000]"
+      : "bg-[#03045E]"; // ТВОЙ ФИРМЕННЫЙ ФОН
 
   return (
-    <div className="min-h-screen bg-white text-black flex flex-col items-center justify-center px-4">
-      {/* Логотип сверху */}
-      <div className="absolute top-8 inset-x-0 flex justify-center">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-zinc-200 bg-zinc-50">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-[11px] tracking-[0.25em] uppercase text-zinc-500">
-            SMOL.DROP
-          </span>
+    <div className={`${bgClass} min-h-screen text-white flex flex-col items-center justify-center`}>
+      <div className="w-full max-w-sm px-6">
+        <div className="mb-6 text-center">
+          <p className="text-sm uppercase tracking-[0.2em]" style={{ color: "#B8FB3C" }}>
+            Smol.Drop
+          </p>
+          <p className="mt-2 text-xs text-[#9CA3AF]">Покажите экран сотруднику</p>
         </div>
-      </div>
 
-      {/* Немного фона за шаром */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute inset-x-0 bottom-20 h-64 bg-[radial-gradient(circle_at_50%_0%,rgba(236,72,153,0.12),transparent_60%)]" />
-      </div>
-
-      {/* GEL-шар */}
-      <button
-        onClick={handleRedeem}
-        disabled={disabled}
-        className={`
-          relative
-          w-64 h-64
-          rounded-full
-          flex items-center justify-center
-          ${outerGlow}
-          transition
-          active:scale-95
-          disabled:opacity-80 disabled:cursor-not-allowed disabled:active:scale-100
-        `}
-      >
-        {/* Внутренний "гелевый" слой */}
         <div
-          className={`
-            w-[82%] h-[82%]
-            rounded-full
-            ${innerFill}
-            flex items-center justify-center
-            relative
-          `}
+          className={`relative overflow-hidden rounded-2xl border border-[#1F2937] ${
+            status === "success"
+              ? "shadow-[0_0_30px_rgba(184,251,60,0.4)]"
+              : status === "error"
+              ? "shadow-[0_0_30px_rgba(255,0,0,0.3)]"
+              : "shadow-[0_0_40px_rgba(184,251,60,0.25)]"
+          }`}
         >
-          {/* Блик сверху */}
-          <div className="pointer-events-none absolute top-0 inset-x-[12%] h-1/2 rounded-t-full bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.95),transparent_60%)] opacity-70" />
-
-          {/* Текст в центре */}
-          <div className="relative flex flex-col items-center justify-center gap-1 text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.35)]">
-            <div className="text-[11px] tracking-[0.22em] uppercase opacity-90">
-              TIMER
-            </div>
-            <div className="text-4xl font-bold tabular-nums">{timeLabel}</div>
-            <div className="text-[11px] tracking-[0.22em] uppercase opacity-95">
-              {actionLabel}
-            </div>
+          {/* АНИМАЦИОННЫЕ ЛИНИИ */}
+          <div
+            className={`absolute inset-0 opacity-70 ${
+              status === "holding" ? "animate-lines-fast" : "animate-lines"
+            }`}
+          >
+            <div
+              className="w-[200%] h-full translate-x-[-25%]"
+              style={{
+                background:
+                  "repeating-linear-gradient(to right, #B8FB3C 0px, #B8FB3C 2px, transparent 2px, transparent 6px)",
+              }}
+            />
           </div>
+
+          {/* ПОЛУПРОЗРАЧНАЯ МАСКА */}
+          <div className="relative z-10 flex flex-col items-center justify-center px-6 py-10 bg-black/40">
+            <p className="text-xs uppercase tracking-[0.2em] mb-3" style={{ color: "#B8FB3C" }}>
+              УДЕРЖИВАЙТЕ
+            </p>
+            <p className="text-4xl font-semibold mb-2" style={{ color: "#B8FB3C" }}>
+              HOLD
+            </p>
+            <p className="text-sm text-center text-[#E5E7EB]">{message}</p>
+          </div>
+
+          {/* ОБЛАСТЬ ДЛЯ ЖЕСТА */}
+          <button
+            type="button"
+            className="absolute inset-0 z-20 touch-none"
+            onMouseDown={startHold}
+            onMouseUp={endHold}
+            onMouseLeave={endHold}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              startHold();
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              endHold();
+            }}
+          />
         </div>
-      </button>
 
-      {/* Подпись */}
-      <p className="mt-8 text-sm text-zinc-600 text-center max-w-xs">
-        {bottomNote}
-      </p>
-
-      {status === "error" && errorMsg && (
-        <p className="mt-3 text-xs text-red-500 text-center max-w-xs">
-          {errorMsg}
+        <p className="mt-4 text-xs text-center text-[#9CA3AF]">
+          Удерживайте палец ~1 секунду. Действие необратимо.
         </p>
-      )}
-    </div>
-  );
-}
+      </div>
 
-export default function TicketPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen bg-white text-black flex items-center justify-center">
-          <p className="text-sm text-zinc-600">Загружаю билет…</p>
-        </div>
-      }
-    >
-      <TicketPageInner />
-    </Suspense>
+      {/* АНИМАЦИИ */}
+      <style jsx global>{`
+        .animate-lines {
+          animation: smol-lines 2.4s linear infinite;
+        }
+        .animate-lines-fast {
+          animation: smol-lines 0.7s linear infinite;
+        }
+        @keyframes smol-lines {
+          0% {
+            transform: translateX(-25%);
+          }
+          100% {
+            transform: translateX(-75%);
+          }
+        }
+      `}</style>
+    </div>
   );
 }
