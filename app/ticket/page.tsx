@@ -25,7 +25,7 @@ export default function TicketPage() {
   };
 
   const endHold = () => {
-    // палец убрали до нужного времени — откат
+    // убрали палец до HOLD_DURATION_MS — отмена
     if (status !== "holding") return;
 
     if (holdTimeoutRef.current) {
@@ -41,14 +41,14 @@ export default function TicketPage() {
       holdTimeoutRef.current = null;
     }
 
-    // freeze — остановили динамику
+    // фризим анимацию
     setStatus("processing");
     setMessage("");
 
     try {
-      // 🔹 ЗАГЛУШКА: здесь пока нет реального API, только эффект
+      // TODO: сюда потом вставишь настоящий вызов API
       await new Promise((r) => setTimeout(r, 700));
-      const ok = true;
+      const ok = true; // заглушка
 
       if (ok) {
         setStatus("success");
@@ -68,7 +68,7 @@ export default function TicketPage() {
       ? "#1F8A42"
       : status === "error"
       ? "#8B0000"
-      : "#03045E";
+      : "#03045E"; // твой базовый фон
 
   return (
     <div
@@ -92,11 +92,12 @@ export default function TicketPage() {
 
       {/* КОНТЕНТ */}
       <div className="relative z-10 flex flex-col items-center justify-center w-full min-h-screen px-6">
-        {/* Маленький бренд */}
+        {/* Маленький бренд сверху */}
         <div className="absolute top-6 left-1/2 -translate-x-1/2 text-[10px] tracking-[0.35em] uppercase">
           <span style={{ color: "#B8FB3C" }}>Smol.Drop</span>
         </div>
 
+        {/* Центр — только статус после гашения (ULTRA CLEAN) */}
         {isResult && (
           <div className="text-center">
             <p
@@ -135,7 +136,7 @@ export default function TicketPage() {
         />
       )}
 
-      {/* СТИЛИ ДЛЯ ЛИНИЙ */}
+      {/* СТИЛИ ЛИНИЙ И АНРИМАЦИЙ */}
       <style jsx global>{`
         .smol-stripes {
           width: 220%;
