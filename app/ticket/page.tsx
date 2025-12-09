@@ -1,207 +1,241 @@
-"use client";
+<canvas id="smolDropCanvas" style="touch-action: none; width: 100vw; height: 100vh; display:block;"></canvas>
+<script>
+  const canvas = document.getElementById('smolDropCanvas');
+  const ctx = canvas.getContext('2d');
 
-import React, { useState, useRef } from "react";
-
-const HOLD_DURATION_MS = 800;
-
-type Status = "idle" | "holding" | "processing" | "success" | "error";
-
-export default function TicketPage() {
-  const [status, setStatus] = useState<Status>("idle");
-  const [message, setMessage] = useState<string>("");
-  const holdTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const isResult = status === "success" || status === "error";
-
-  const startHold = () => {
-    if (status !== "idle") return;
-
-    setStatus("holding");
-
-    if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current);
-    holdTimeoutRef.current = setTimeout(() => {
-      triggerRedeem();
-    }, HOLD_DURATION_MS);
+  const COLORS = {
+    bg: '#000B3B',
+    accent: '#B8FB3C',
+    errorOverlay: 'rgba(255, 60, 60, 0.22)',
+    successOverlay: 'rgba(184, 251, 60, 0.18)',
+    text: '#FFFFFF'
   };
 
-  const endHold = () => {
-    if (status !== "holding") return;
+  let width, height, dpr;
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
 
-    if (holdTimeoutRef.current) {
-      clearTimeout(holdTimeoutRef.current);
-      holdTimeoutRef.current = null;
+  // State
+  let state = 'idle'; // idle | holding | pending | success | error
+  let holdStart = 0;
+  let holdProgress = 0;
+  const HOLD_DURATION = 800; // ms
+  let intensity = 0;       // текущая
+  let targetIntensity = 0; // целевая
+  let lastTime = performance.now();
+
+  // Для одиночного вызова API
+  let redeemCalled = false;
+
+  function onRedeem() {
+    if (redeemCalled) return;
+    redeemCalled = true;
+    state = 'pending';
+
+    // TODO: вот сюда втыкаешь реальный API-вызов
+    // Имитация API
+    setTimeout(() => {
+      const ok = true; // или false для ошибки
+      state = ok ? 'success' : 'error';
+      targetIntensity = ok ? 0.6 : 0.2;
+    }, 400);
+  }
+
+  // Pointer events
+  let pointerDown = false;
+
+  function startHold(ev) {
+    if (state === 'success' || state === 'pending') return;
+    pointerDown = true;
+    state = 'holding';
+    holdStart = performance.now();
+    holdProgress = 0;
+    targetIntensity = 1;
+    redeemCalled = false;
+  }
+
+  function endHold(ev) {
+    pointerDown = false;
+    if (state === 'holding') {
+      // не дожали
+      state = 'idle';
+      targetIntensity = 0;
     }
-    setStatus("idle");
-  };
+  }
 
-  const triggerRedeem = async () => {
-    if (holdTimeoutRef.current) {
-      clearTimeout(holdTimeoutRef.current);
-      holdTimeoutRef.current = null;
-    }
+  canvas.addEventListener('pointerdown', startHold);
+  canvas.addEventListener('pointerup', endHold);
+  canvas.addEventListener('pointercancel', endHold);
+  canvas.addEventListener('pointerleave', endHold);
 
-    setStatus("processing");
-    setMessage("");
+  // Core loop
+  function loop(now) {
+    const dt = now - lastTime;
+    lastTime = now;
+    const t = now / 1000;
 
-    try {
-      // TODO: сюда вставишь реальный вызов API гашения
-      await new Promise((r) => setTimeout(r, 700));
-      const ok = true; // заглушка
-
-      if (ok) {
-        setStatus("success");
-        setMessage("Погашено");
-      } else {
-        setStatus("error");
-        setMessage("Ошибка");
+    // Обновляем holdProgress
+    if (state === 'holding') {
+      const elapsed = now - holdStart;
+      holdProgress = Math.min(1, elapsed / HOLD_DURATION);
+      if (holdProgress === 1 && !redeemCalled) {
+        onRedeem();
       }
-    } catch {
-      setStatus("error");
-      setMessage("Сбой");
+    } else {
+      // плавное схлопывание прогресса
+      holdProgress += (0 - holdProgress) * 0.15;
     }
-  };
 
-  const resultBg =
-    status === "success"
-      ? "#1F8A42"
-      : status === "error"
-      ? "#8B0000"
-      : "#03045E";
+    // Плавное приближение intensity к целевой
+    intensity += (targetIntensity - intensity) * 0.08;
 
-  const radii = [40, 55, 70, 85, 100, 115, 130];
+    // Рисуем
+    drawScene(t);
 
-  return (
-    <div
-      className="relative min-h-screen w-full overflow-hidden flex items-center justify-center"
-      style={{
-        backgroundColor: resultBg,
-        WebkitUserSelect: "none",
-        userSelect: "none",
-      }}
-    >
-      {/* РАДАР */}
-      {!isResult && (
-        <div className="relative z-10 flex flex-col items-center justify-center w-full px-6">
-          <div className="mb-10 text-[10px] tracking-[0.35em] uppercase">
-            <span style={{ color: "#B8FB3C" }}>SMOL.DROP</span>
-          </div>
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
 
-          <div className="flex items-center justify-center">
-            <svg
-              viewBox="-150 -150 300 300"
-              className={[
-                "smol-radar",
-                status === "holding" ? "charged" : "",
-                status === "processing" ? "paused" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-            >
-              <g className="radar-group">
-                {radii.map((r) => (
-                  <path
-                    key={r}
-                    d={`M 0 -${r} A ${r} ${r} 0 0 1 0 ${r}`}
-                    fill="none"
-                    stroke="#B8FB3C"
-                    strokeWidth={3}
-                    strokeLinecap="round"
-                    opacity={0.9}
-                  />
-                ))}
-              </g>
-            </svg>
-          </div>
+  function drawScene(t) {
+    // background
+    ctx.fillStyle = COLORS.bg;
+    ctx.fillRect(0, 0, width, height);
 
-          <div className="mt-10 text-[10px] uppercase tracking-[0.25em] text-white/40">
-            НАЖМИТЕ И УДЕРЖИВАЙТЕ
-          </div>
-        </div>
-      )}
+    const cx = width / 2;
+    const cy = height / 2;
+    const baseRadius = Math.min(width, height) * 0.25;
 
-      {/* ЭКРАН ПОСЛЕ ГАШЕНИЯ */}
-      {isResult && (
-        <div className="relative z-10 flex flex-col items-center justify-center w-full min-h-screen px-6 text-center">
-          <p
-            className="text-4xl font-semibold mb-2"
-            style={{ color: "#B8FB3C" }}
-          >
-            {status === "success" ? "Погашено" : "Ошибка"}
-          </p>
-          {message && (
-            <p className="text-xs text-[#F9FAFB]/80">
-              {status === "success"
-                ? "Покажите экран сотруднику."
-                : "Обратитесь к персоналу."}
-            </p>
-          )}
-        </div>
-      )}
+    // Параметры от intensity
+    const speedBase = 0.4 + intensity * 1.0;
+    const thicknessBase = 2 + intensity * 3;
+    const radiusPulseAmp = baseRadius * (0.02 + 0.03 * intensity);
 
-      {/* ЖЕСТ НА ВЕСЬ ЭКРАН */}
-      {!isResult && (
-        <button
-          type="button"
-          className="absolute inset-0 z-20 touch-none"
-          onMouseDown={startHold}
-          onMouseUp={endHold}
-          onMouseLeave={endHold}
-          onTouchStart={(e) => {
-            e.preventDefault();
-            startHold();
-          }}
-          onTouchEnd={(e) => {
-            e.preventDefault();
-            endHold();
-          }}
-          style={{
-            WebkitTapHighlightColor: "transparent",
-          }}
-        />
-      )}
+    // Орбитальные дуги
+    const orbits = 4;
+    for (let i = 0; i < orbits; i++) {
+      const orbitRatio = 0.75 + i * 0.18; // радиусы
+      const r = baseRadius * orbitRatio
+        + radiusPulseAmp * Math.sin(t * (0.4 + 0.1 * i) + i);
 
-      {/* СТИЛИ */}
-      <style jsx global>{`
-        .smol-radar {
-          width: 260px;
-          height: 260px;
-          filter: drop-shadow(0 0 18px rgba(184, 251, 60, 0.35));
-        }
+      const angleSpan = Math.PI * (1.4 + 0.1 * i); // длина дуги
+      const baseAngle = t * speedBase * (1 + i * 0.2);
+      const phaseOffset = i * 0.7;
+      const startAngle = baseAngle + phaseOffset;
+      const endAngle = startAngle + angleSpan;
 
-        .radar-group {
-          transform-origin: center;
-          animation: radar-rotate 3s linear infinite;
-        }
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, startAngle, endAngle);
+      ctx.lineWidth = thicknessBase * (0.9 + i * 0.08);
+      ctx.strokeStyle = COLORS.accent;
+      ctx.globalAlpha = 0.4 + 0.1 * i + 0.3 * intensity;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      ctx.restore();
+    }
 
-        .smol-radar.charged .radar-group {
-          animation-duration: 0.9s;
-          filter: drop-shadow(0 0 26px rgba(184, 251, 60, 0.6));
-        }
+    // Радиальные лучи (сканеры)
+    const rays = 6;
+    const rayLength = baseRadius * 1.4;
+    for (let i = 0; i < rays; i++) {
+      const rayPhase = i * (Math.PI * 2 / rays);
+      const rayAngle = t * (0.3 + 0.5 * intensity) + rayPhase;
 
-        .smol-radar.paused .radar-group {
-          animation-play-state: paused;
-        }
+      const innerR = baseRadius * 0.3;
+      const outerR = innerR + rayLength * (0.8 + 0.2 * intensity);
 
-        @keyframes radar-rotate {
-          0% {
-            transform: rotate(0deg);
-          }
-          100% {
-            transform: rotate(360deg);
-          }
-        }
+      const x1 = cx + Math.cos(rayAngle) * innerR;
+      const y1 = cy + Math.sin(rayAngle) * innerR;
+      const x2 = cx + Math.cos(rayAngle) * outerR;
+      const y2 = cy + Math.sin(rayAngle) * outerR;
 
-        html,
-        body {
-          -webkit-user-select: none;
-          user-select: none;
-          -webkit-touch-callout: none;
-        }
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.lineWidth = 1 + 2 * intensity;
+      ctx.strokeStyle = COLORS.accent;
+      ctx.globalAlpha = 0.25 + 0.35 * intensity;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      ctx.restore();
+    }
 
-        body {
-          background-color: #03045e;
-        }
-      `}</style>
-    </div>
-  );
-}
+    // Центральный круг + прогресс удержания
+    const coreR = baseRadius * 0.35;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, coreR, 0, Math.PI * 2);
+    ctx.lineWidth = 1 + 2 * intensity;
+    ctx.strokeStyle = COLORS.accent;
+    ctx.globalAlpha = 0.4 + 0.3 * intensity;
+    ctx.stroke();
+    ctx.restore();
+
+    // Прогресс удержания по окружности
+    if (holdProgress > 0.01) {
+      const progAngle = holdProgress * Math.PI * 2;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, coreR * 0.85, -Math.PI / 2, -Math.PI / 2 + progAngle);
+      ctx.lineWidth = 3 + 2 * intensity;
+      ctx.strokeStyle = COLORS.accent;
+      ctx.globalAlpha = 0.8;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Glow центра
+    if (intensity > 0.05) {
+      const glowR = coreR * (1.1 + 0.3 * intensity);
+      const grad = ctx.createRadialGradient(
+        cx, cy, 0, cx, cy, glowR
+      );
+      grad.addColorStop(0, 'rgba(184,251,60,0.35)');
+      grad.addColorStop(1, 'rgba(184,251,60,0)');
+      ctx.save();
+      ctx.fillStyle = grad;
+      ctx.fillRect(cx - glowR, cy - glowR, glowR * 2, glowR * 2);
+      ctx.restore();
+    }
+
+    // Overlays для state
+    if (state === 'success') {
+      ctx.save();
+      ctx.fillStyle = COLORS.successOverlay;
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+
+      drawLabel('Билет погашён', cx, cy);
+    } else if (state === 'error') {
+      ctx.save();
+      ctx.fillStyle = COLORS.errorOverlay;
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+
+      drawLabel('Ошибка', cx, cy);
+    } else if (state === 'pending') {
+      drawLabel('Проверка…', cx, cy);
+    }
+  }
+
+  function drawLabel(text, cx, cy) {
+    ctx.save();
+    ctx.font = '500 16px system-ui, -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = COLORS.text;
+    ctx.globalAlpha = 0.9;
+    ctx.fillText(text, cx, cy);
+    ctx.restore();
+  }
+</script>
