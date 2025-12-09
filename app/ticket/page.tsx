@@ -44,7 +44,7 @@ export default function TicketPage() {
     setMessage("");
 
     try {
-      // TODO: сюда потом вставишь реальный вызов API гашения
+      // TODO: сюда вставишь реальный вызов API гашения
       await new Promise((r) => setTimeout(r, 700));
       const ok = true; // заглушка
 
@@ -79,10 +79,9 @@ export default function TicketPage() {
         userSelect: "none",
       }}
     >
-      {/* РАДАР-АНИМАЦИЯ */}
+      {/* РАДАР */}
       {!isResult && (
         <div className="relative z-10 flex flex-col items-center justify-center w-full px-6">
-          {/* Лого сверху */}
           <div className="mb-10 text-[10px] tracking-[0.35em] uppercase">
             <span style={{ color: "#B8FB3C" }}>SMOL.DROP</span>
           </div>
@@ -100,7 +99,7 @@ export default function TicketPage() {
             >
               {radii.map((r, i) => {
                 const circumference = 2 * Math.PI * r;
-                const visible = circumference * 0.55; // длина видимого сегмента
+                const visible = circumference * 0.55;
                 const gap = circumference - visible;
                 return (
                   <circle
@@ -128,7 +127,7 @@ export default function TicketPage() {
         </div>
       )}
 
-      {/* Экран после гашения */}
+      {/* ЭКРАН ПОСЛЕ ГАШЕНИЯ */}
       {isResult && (
         <div className="relative z-10 flex flex-col items-center justify-center w-full min-h-screen px-6 text-center">
           <p
@@ -147,7 +146,7 @@ export default function TicketPage() {
         </div>
       )}
 
-      {/* Жест на весь экран */}
+      {/* ЖЕСТ НА ВЕСЬ ЭКРАН */}
       {!isResult && (
         <button
           type="button"
@@ -169,7 +168,7 @@ export default function TicketPage() {
         />
       )}
 
-      {/* АНИМАЦИИ */}
+      {/* СТИЛИ */}
       <style jsx global>{`
         .smol-radar {
           width: 260px;
@@ -179,34 +178,34 @@ export default function TicketPage() {
 
         .ring {
           transform-origin: center;
-          animation: ring-move 3s linear infinite;
+          animation: ring-spin 4s linear infinite;
         }
 
-        /* одна скорость — разные фазы через задержку */
+        /* ближе к центру — быстрее */
         .ring-0 {
-          animation-delay: 0s;
+          animation-duration: 2s;
         }
         .ring-1 {
-          animation-delay: 0.08s;
+          animation-duration: 2.3s;
         }
         .ring-2 {
-          animation-delay: 0.16s;
+          animation-duration: 2.6s;
         }
         .ring-3 {
-          animation-delay: 0.24s;
+          animation-duration: 2.9s;
         }
         .ring-4 {
-          animation-delay: 0.32s;
+          animation-duration: 3.2s;
         }
         .ring-5 {
-          animation-delay: 0.4s;
+          animation-duration: 3.5s;
         }
         .ring-6 {
-          animation-delay: 0.48s;
+          animation-duration: 3.8s;
         }
 
         .smol-radar.charged .ring {
-          animation-duration: 1s;
+          animation-duration: 1.1s;
           stroke-width: 4;
           filter: drop-shadow(0 0 26px rgba(184, 251, 60, 0.6));
         }
@@ -215,16 +214,15 @@ export default function TicketPage() {
           animation-play-state: paused;
         }
 
-        @keyframes ring-move {
+        @keyframes ring-spin {
           0% {
-            stroke-dashoffset: 0;
+            transform: rotate(0deg);
           }
           100% {
-            stroke-dashoffset: -420;
+            transform: rotate(360deg);
           }
         }
 
-        /* Глобально рубим выделение и long-press меню */
         html,
         body {
           -webkit-user-select: none;
