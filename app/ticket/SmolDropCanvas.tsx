@@ -112,61 +112,64 @@ export function SmolDropCanvas() {
     }
 
     // -------- РАДАР-ВИЗУАЛ --------
-    function drawScene(t: number) {
+        function drawScene(t: number) {
       ctx.fillStyle = COLORS.bg;
       ctx.fillRect(0, 0, width, height);
 
-      // Смещаем центр вправо
-      const cx = width * 0.6;
+      // Центр ближе к левой стороне, чтобы сектор "смотрел" вправо
+      const cx = width * 0.22;
       const cy = height * 0.5;
 
-      const baseRadius = Math.min(width, height) * 0.42;
+      const maxRadius = Math.min(width, height) * 0.55;
 
-      const baseThickness = 2 + intensity * 3.5;
-      const baseSpeed = 0.45 + intensity * 1.1;
-      const maxSpan = Math.PI * 0.9; // сектор ~162°
-      const bands = 8; // количество полос
+      // Параметры от интенсивности (удержание)
+      const baseThickness = 2 + intensity * 3;
+      const baseSpeed = 0.35 + intensity * 1.1;
+
+      const bands = 9;              // количество полос
+      const angleSpan = Math.PI * 0.5; // ~90°, сектор как на гифке
 
       for (let i = 0; i < bands; i++) {
-        const k = i / Math.max(1, bands - 1); // 0…1
+        const k = i / Math.max(1, bands - 1); // 0 (внутренняя) → 1 (внешняя)
 
-        const r = baseRadius * (0.25 + 0.08 * i);
+        // радиус текущей полосы
+        const r = maxRadius * (0.2 + 0.06 * i);
 
-        // ближе к центру — быстрее
-        const speedFactor = 1.4 - k * 0.7; // inner ~1.4, outer ~0.7
-        const phase = t * baseSpeed * speedFactor;
-        const cycle = phase - Math.floor(phase); // frac ∈ [0,1)
-        const span = maxSpan * cycle;
+        // внутренние быстрее, внешние медленнее
+        const speedFactor = 1.7 - 0.8 * k; // inner ~1.7, outer ~0.9
+        const angle = t * baseSpeed * speedFactor;
 
-        const startAngle = -Math.PI * 0.5; // сверху
-        const endAngle = startAngle + span;
+        // центр сектора всегда смотрит вправо (0 рад), но есть небольшое «дрожание»
+        const midAngle = 0 + 0.05 * Math.sin(t * 0.5);
+        const startAngle = midAngle - angleSpan / 2;
+        const endAngle = midAngle + angleSpan / 2;
 
         ctx.save();
         ctx.beginPath();
-        ctx.arc(cx, cy, r, startAngle, endAngle);
-        ctx.lineWidth = baseThickness * (0.7 + 0.3 * (1 - k));
+        ctx.arc(cx, cy, r, startAngle + angle, endAngle + angle);
+        ctx.lineWidth = baseThickness * (0.8 + 0.3 * (1 - k));
         ctx.strokeStyle = COLORS.accent;
-        ctx.globalAlpha = 0.35 + 0.25 * (1 - k) + 0.2 * intensity;
+        ctx.globalAlpha = 0.4 + 0.2 * (1 - k) + 0.2 * intensity;
         ctx.lineCap = "round";
         ctx.stroke();
         ctx.restore();
       }
 
-      // центральное пятно / glow
-      const coreR = baseRadius * 0.18;
-      const glowR = coreR * (2.2 + 0.6 * intensity);
+      // центральный glow
+      const coreR = maxRadius * 0.18;
+      const glowR = coreR * (2.0 + 0.7 * intensity);
       const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
-      grad.addColorStop(0, "rgba(184,251,60,0.32)");
+      grad.addColorStop(0, "rgba(184,251,60,0.30)");
       grad.addColorStop(1, "rgba(184,251,60,0)");
       ctx.save();
       ctx.fillStyle = grad;
       ctx.fillRect(cx - glowR, cy - glowR, glowR * 2, glowR * 2);
       ctx.restore();
 
-      // прогресс удержания — тонкая дуга ближе к центру
+      // прогресс удержания — тонкая дуга вокруг glow
       if (holdProgress > 0.01) {
         const progAngle = holdProgress * Math.PI * 2;
-        const progRadius = baseRadius * 0.22;
+        const progRadius = maxRadius * 0.24;
         ctx.save();
         ctx.beginPath();
         ctx.arc(
@@ -178,7 +181,7 @@ export function SmolDropCanvas() {
         );
         ctx.lineWidth = 3 + 2 * intensity;
         ctx.strokeStyle = COLORS.accent;
-        ctx.globalAlpha = 0.9;
+        ctx.globalAlpha = 0.95;
         ctx.lineCap = "round";
         ctx.stroke();
         ctx.restore();
@@ -201,6 +204,7 @@ export function SmolDropCanvas() {
         drawLabel("Проверка…", cx, cy);
       }
     }
+
 
     function loop(now: number) {
       const t = now / 1000;
