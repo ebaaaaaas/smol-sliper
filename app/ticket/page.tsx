@@ -73,7 +73,11 @@ export default function TicketPage() {
   return (
     <div
       className="relative min-h-screen w-full overflow-hidden flex items-center justify-center"
-      style={{ backgroundColor: resultBg }}
+      style={{
+        backgroundColor: resultBg,
+        WebkitUserSelect: "none",
+        userSelect: "none",
+      }}
     >
       {/* РАДАР-АНИМАЦИЯ */}
       {!isResult && (
@@ -159,10 +163,13 @@ export default function TicketPage() {
             e.preventDefault();
             endHold();
           }}
+          style={{
+            WebkitTapHighlightColor: "transparent",
+          }}
         />
       )}
 
-      {/* АНИМАЦИИ — аккуратные, без “пьяного” вращения */}
+      {/* АНИМАЦИИ */}
       <style jsx global>{`
         .smol-radar {
           width: 260px;
@@ -172,34 +179,34 @@ export default function TicketPage() {
 
         .ring {
           transform-origin: center;
-          animation: ring-move 3.2s linear infinite;
+          animation: ring-move 3s linear infinite;
         }
 
-        /* разная скорость для глубины, но без вращения фигуры */
+        /* одна скорость — разные фазы через задержку */
         .ring-0 {
-          animation-duration: 3.8s;
+          animation-delay: 0s;
         }
         .ring-1 {
-          animation-duration: 3.4s;
+          animation-delay: 0.08s;
         }
         .ring-2 {
-          animation-duration: 3s;
+          animation-delay: 0.16s;
         }
         .ring-3 {
-          animation-duration: 2.6s;
+          animation-delay: 0.24s;
         }
         .ring-4 {
-          animation-duration: 2.2s;
+          animation-delay: 0.32s;
         }
         .ring-5 {
-          animation-duration: 2.8s;
+          animation-delay: 0.4s;
         }
         .ring-6 {
-          animation-duration: 4.2s;
+          animation-delay: 0.48s;
         }
 
         .smol-radar.charged .ring {
-          animation-duration: 1.1s;
+          animation-duration: 1s;
           stroke-width: 4;
           filter: drop-shadow(0 0 26px rgba(184, 251, 60, 0.6));
         }
@@ -215,6 +222,14 @@ export default function TicketPage() {
           100% {
             stroke-dashoffset: -420;
           }
+        }
+
+        /* Глобально рубим выделение и long-press меню */
+        html,
+        body {
+          -webkit-user-select: none;
+          user-select: none;
+          -webkit-touch-callout: none;
         }
 
         body {
