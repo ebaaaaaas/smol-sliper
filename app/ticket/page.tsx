@@ -1,162 +1,203 @@
 "use client";
 
 import React, { useState, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 
 const HOLD_DURATION_MS = 800;
 
 type Status = "idle" | "holding" | "processing" | "success" | "error";
 
 export default function TicketPage() {
+  const searchParams = useSearchParams();
+  const ticketId = searchParams.get("uuid"); // если передаёшь uuid в query
   const [status, setStatus] = useState<Status>("idle");
-  const [message, setMessage] = useState("Удерживайте палец, чтобы погасить билет");
+  const [message, setMessage] = useState<string>("");
   const holdTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const canInteract = status === "idle" || status === "holding";
-
   const startHold = () => {
-    if (!canInteract) return;
+    if (status !== "idle") return;
 
     setStatus("holding");
-    setMessage("Держите палец…");
 
     if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current);
-
     holdTimeoutRef.current = setTimeout(() => {
       triggerRedeem();
     }, HOLD_DURATION_MS);
   };
 
   const endHold = () => {
-    if (!canInteract) return;
+    // если не успели досчитать до HOLD_DURATION_MS — откат
+    if (status !== "holding") return;
 
     if (holdTimeoutRef.current) {
       clearTimeout(holdTimeoutRef.current);
       holdTimeoutRef.current = null;
     }
-
     setStatus("idle");
-    setMessage("Удерживайте палец, чтобы погасить билет");
   };
 
   const triggerRedeem = async () => {
+    if (holdTimeoutRef.current) {
+      clearTimeout(holdTimeoutRef.current);
+      holdTimeoutRef.current = null;
+    }
+
+    // freeze: останавливаем анимацию
     setStatus("processing");
-    setMessage("Гашение билета…");
+    setMessage("");
 
     try {
-      // TODO: сюда подключишь свой реальный API
-      await new Promise((r) => setTimeout(r, 800));
-      const ok = true;
+      if (!ticketId) {
+        setStatus("error");
+        setMessage("Билет не найден.");
+        return;
+      }
+
+      // TODO: подставь свой реальный эндпоинт гашения
+      // пример:
+      /*
+      const res = await fetch(`/api/redeem?uuid=${ticketId}`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (res.ok && data.result === "success") { ... }
+      */
+
+      // заглушка вместо реального запроса
+      await new Promise((r) => setTimeout(r, 700));
+      const ok = true; // тут подставишь результат от бэка
 
       if (ok) {
         setStatus("success");
-        setMessage("Билет погашен. Приятного аппетита!");
+        setMessage("Погашено");
       } else {
         setStatus("error");
-        setMessage("Ошибка гашения. Обратитесь к персоналу.");
+        setMessage("Ошибка");
       }
     } catch {
       setStatus("error");
-      setMessage("Ошибка соединения. Попробуйте ещё раз.");
+      setMessage("Сбой");
     }
   };
 
-  const overlayColor =
+  const isResult = status === "success" || status === "error";
+
+  const resultBg =
     status === "success"
-      ? "#1f8a42cc"
+      ? "#1F8A42" // зелёный успех
       : status === "error"
-      ? "#8b0000cc"
-      : "#03045ECC";
+      ? "#8B0000" // красный ошибка
+      : "#03045E"; // твой базовый фон
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center text-white overflow-hidden">
-      {/* Фон с горизонтальными полосами на весь экран */}
-      <div
-        className={`pointer-events-none absolute inset-0 opacity-80 ${
-          status === "holding" ? "animate-lines-fast" : "animate-lines"
-        }`}
-      >
-        <div
-          className="w-[220%] h-full translate-x-[-20%]"
-          style={{
-            // ГОРИЗОНТАЛЬНЫЕ ПОЛОСЫ: толще + больше просвет
-            background:
-              "repeating-linear-gradient(to bottom, #B8FB3C 0px, #B8FB3C 4px, transparent 4px, transparent 14px)",
-          }}
-        />
-      </div>
+    <div
+      className="relative min-h-screen w-full overflow-hidden flex items-center justify-center"
+      style={{ backgroundColor: resultBg }}
+    >
+      {/* ДИАГОНАЛЬНЫЕ ЛИНИИ НА ВЕСЬ ЭКРАН */}
+      {!isResult && (
+        <div className="pointer-events-none absolute inset-0">
+          <div
+            className={[
+              "smol-stripes",
+              status === "holding" ? "fast" : "",
+              status === "processing" ? "paused" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          />
+        </div>
+      )}
 
-      {/* Тонирующий оверлей */}
-      <div
-        className="absolute inset-0"
-        style={{
-          backgroundColor: overlayColor,
-        }}
-      />
-
-      {/* Контент */}
-      <div className="relative z-10 w-full max-w-sm px-6 text-center">
-        <p
-          className="text-sm uppercase tracking-[0.25em] mb-2"
-          style={{ color: "#B8FB3C" }}
-        >
-          SMOL.DROP
-        </p>
-        <p className="text-xs text-[#E5E7EB]/80 mb-8">Покажите этот экран сотруднику</p>
-
-        <div className="mb-8">
-          <p
-            className="text-xs uppercase tracking-[0.25em] mb-4"
-            style={{ color: "#B8FB3C" }}
-          >
-            УДЕРЖИВАЙТЕ
-          </p>
-          <p
-            className="text-5xl font-semibold mb-3"
-            style={{ color: "#B8FB3C" }}
-          >
-            HOLD
-          </p>
-          <p className="text-sm text-center text-[#F9FAFB]/90">{message}</p>
+      {/* КОНТЕНТ */}
+      <div className="relative z-10 flex flex-col items-center justify-center w-full min-h-screen px-6">
+        {/* Маленький бренд сверху */}
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 text-[10px] tracking-[0.35em] uppercase">
+          <span style={{ color: "#B8FB3C" }}>Smol.Drop</span>
         </div>
 
-        <p className="text-xs text-[#E5E7EB]/70">
-          Удерживайте палец ~1 секунду. Действие необратимо.
-        </p>
+        {/* Центр: только статус после гашения, до этого — пусто (ultra clean) */}
+        {isResult && (
+          <div className="text-center">
+            <p
+              className="text-4xl font-semibold mb-2"
+              style={{ color: "#B8FB3C" }}
+            >
+              {status === "success" ? "Погашено" : "Ошибка"}
+            </p>
+            {message && (
+              <p className="text-xs text-[#F9FAFB]/80">
+                {status === "success"
+                  ? "Покажите экран сотруднику."
+                  : "Обратитесь к персоналу."}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Интерактивная зона на весь экран */}
-      <button
-        type="button"
-        className="absolute inset-0 z-20 touch-none"
-        onMouseDown={startHold}
-        onMouseUp={endHold}
-        onMouseLeave={endHold}
-        onTouchStart={(e) => {
-          e.preventDefault();
-          startHold();
-        }}
-        onTouchEnd={(e) => {
-          e.preventDefault();
-          endHold();
-        }}
-      />
+      {/* ИНТЕРАКТИВНАЯ ЗОНА НА ВЕСЬ ЭКРАН */}
+      {!isResult && (
+        <button
+          type="button"
+          className="absolute inset-0 z-20 touch-none"
+          onMouseDown={startHold}
+          onMouseUp={endHold}
+          onMouseLeave={endHold}
+          onTouchStart={(e) => {
+            e.preventDefault();
+            startHold();
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            endHold();
+          }}
+        />
+      )}
 
-      {/* Анимации полос */}
+      {/* СТИЛИ ДЛЯ ЛИНИЙ И АНИМАЦИИ */}
       <style jsx global>{`
-        .animate-lines {
-          animation: smol-lines 2.4s linear infinite;
+        .smol-stripes {
+          width: 220%;
+          height: 220%;
+          position: absolute;
+          top: -10%;
+          left: -10%;
+          background: repeating-linear-gradient(
+            135deg,
+            #b8fb3c 0px,
+            #b8fb3c 2px,
+            transparent 2px,
+            transparent 16px
+          );
+          animation: smol-diag 2.6s linear infinite;
+          opacity: 0.9;
         }
-        .animate-lines-fast {
-          animation: smol-lines 0.7s linear infinite;
+
+        .smol-stripes.fast {
+          animation-duration: 0.7s;
+          background: repeating-linear-gradient(
+            135deg,
+            #b8fb3c 0px,
+            #b8fb3c 5px,
+            transparent 5px,
+            transparent 18px
+          );
         }
-        @keyframes smol-lines {
+
+        .smol-stripes.paused {
+          animation-play-state: paused;
+        }
+
+        @keyframes smol-diag {
           0% {
-            transform: translateX(-20%);
+            transform: translateX(-15%);
           }
           100% {
-            transform: translateX(-80%);
+            transform: translateX(-75%);
           }
         }
+
         body {
           background-color: #03045e;
         }
