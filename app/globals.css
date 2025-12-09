@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+/* --------- THEME VARIABLES --------- */
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -19,8 +21,54 @@
   }
 }
 
+/* --------- DEFAULT BODY STYLING --------- */
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  
+  /* Удаляет bounce, скролл и т.п. */
+  overscroll-behavior: none;
+
+  /* Отключает выделение текста */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+
+  /* Отключает iOS callout меню */
+  -webkit-touch-callout: none;
+
+  /* Отключает длинный тап → выделение */
+  -webkit-tap-highlight-color: transparent;
+
+  margin: 0;
+  padding: 0;
+}
+
+/* --------- CANVAS (наш экран погашения) --------- */
+
+canvas {
+  display: block;
+
+  /* Отключить выделение */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+
+  /* Отключить контекстное меню */
+  -webkit-touch-callout: none;
+
+  /* Не позволять iOS зумить при тапе */
+  -webkit-tap-highlight-color: transparent;
+
+  /* Блокируем жесты зума/скролла */
+  touch-action: none;
+}
+
+/* --------- ГЛОБАЛЬНО ОТКЛЮЧАЕМ ВЫДЕЛЕНИЕ --------- */
+
+html, body, * {
+  -webkit-user-select: none;
+  user-select: none;
 }
