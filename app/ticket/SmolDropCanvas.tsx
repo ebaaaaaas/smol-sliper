@@ -16,18 +16,18 @@ export function SmolDropCanvas() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvasRef.current) return;
 
-    const ctx = canvas.getContext("2d");
+    // Жёстко говорим TS, что это не null
+    const canvas = canvasRef.current as HTMLCanvasElement;
+    const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
     if (!ctx) return;
 
-    // ---- переменные состояния ----
     let width = 0;
     let height = 0;
     let dpr = 1;
 
-    const HOLD_DURATION = 800; // ms
+    const HOLD_DURATION = 800;
 
     let state: CanvasState = "idle";
     let holdStart = 0;
@@ -39,7 +39,6 @@ export function SmolDropCanvas() {
     let frameId: number | null = null;
     let apiTimeoutId: number | null = null;
 
-    // ---- resize ----
     function resize() {
       dpr = window.devicePixelRatio || 1;
       width = window.innerWidth;
@@ -52,13 +51,12 @@ export function SmolDropCanvas() {
     resize();
     window.addEventListener("resize", resize);
 
-    // ---- API вызов (заглушка) ----
     function onRedeem() {
       if (redeemCalled) return;
       redeemCalled = true;
       state = "pending";
 
-      // TODO: сюда воткнуть реальный fetch на /api/redeem
+      // TODO: реальный API-вызов
       apiTimeoutId = window.setTimeout(() => {
         const ok = true; // заменить на реальный результат
         state = ok ? "success" : "error";
@@ -66,7 +64,6 @@ export function SmolDropCanvas() {
       }, 400);
     }
 
-    // ---- жест удержания ----
     function startHold() {
       if (state === "success" || state === "pending") return;
       state = "holding";
@@ -98,7 +95,6 @@ export function SmolDropCanvas() {
     canvas.addEventListener("pointercancel", handlePointerUp);
     canvas.addEventListener("pointerleave", handlePointerUp);
 
-    // ---- рисование ----
     function drawLabel(text: string, cx: number, cy: number) {
       ctx.save();
       ctx.font =
@@ -123,7 +119,6 @@ export function SmolDropCanvas() {
       const thicknessBase = 2 + intensity * 3;
       const radiusPulseAmp = baseRadius * (0.02 + 0.03 * intensity);
 
-      // орбитальные дуги
       const orbits = 4;
       for (let i = 0; i < orbits; i++) {
         const orbitRatio = 0.75 + i * 0.18;
@@ -148,7 +143,6 @@ export function SmolDropCanvas() {
         ctx.restore();
       }
 
-      // радиальные лучи
       const rays = 6;
       const rayLength = baseRadius * 1.4;
       for (let i = 0; i < rays; i++) {
@@ -175,7 +169,6 @@ export function SmolDropCanvas() {
         ctx.restore();
       }
 
-      // центральное кольцо
       const coreR = baseRadius * 0.35;
       ctx.save();
       ctx.beginPath();
@@ -186,7 +179,6 @@ export function SmolDropCanvas() {
       ctx.stroke();
       ctx.restore();
 
-      // прогресс удержания
       if (holdProgress > 0.01) {
         const progAngle = holdProgress * Math.PI * 2;
         ctx.save();
@@ -206,7 +198,6 @@ export function SmolDropCanvas() {
         ctx.restore();
       }
 
-      // glow центра
       if (intensity > 0.05) {
         const glowR = coreR * (1.1 + 0.3 * intensity);
         const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
@@ -218,7 +209,6 @@ export function SmolDropCanvas() {
         ctx.restore();
       }
 
-      // overlays / текст по состоянию
       if (state === "success") {
         ctx.save();
         ctx.fillStyle = COLORS.successOverlay;
@@ -236,7 +226,6 @@ export function SmolDropCanvas() {
       }
     }
 
-    // ---- animation loop ----
     function loop(now: number) {
       const t = now / 1000;
       lastTime = now;
@@ -248,7 +237,6 @@ export function SmolDropCanvas() {
           onRedeem();
         }
       } else {
-        // плавное схлопывание прогресса
         holdProgress += (0 - holdProgress) * 0.15;
       }
 
@@ -261,7 +249,6 @@ export function SmolDropCanvas() {
 
     frameId = requestAnimationFrame(loop);
 
-    // ---- cleanup ----
     return () => {
       if (frameId !== null) cancelAnimationFrame(frameId);
       if (apiTimeoutId !== null) window.clearTimeout(apiTimeoutId);
