@@ -43,7 +43,7 @@ export default function TicketPage() {
     setMessage("Гашение билета…");
 
     try {
-      // TODO: Вставь реальный API
+      // TODO: сюда подключишь свой реальный API
       await new Promise((r) => setTimeout(r, 800));
       const ok = true;
 
@@ -60,82 +60,87 @@ export default function TicketPage() {
     }
   };
 
-  const bgClass =
+  const overlayColor =
     status === "success"
-      ? "bg-[#1f8a42]"
+      ? "#1f8a42cc"
       : status === "error"
-      ? "bg-[#8b0000]"
-      : "bg-[#03045E]"; // ТВОЙ ФИРМЕННЫЙ ФОН
+      ? "#8b0000cc"
+      : "#03045ECC"; // твой фирменный фон с прозрачностью
 
   return (
-    <div className={`${bgClass} min-h-screen text-white flex flex-col items-center justify-center`}>
-      <div className="w-full max-w-sm px-6">
-        <div className="mb-6 text-center">
-          <p className="text-sm uppercase tracking-[0.2em]" style={{ color: "#B8FB3C" }}>
-            Smol.Drop
-          </p>
-          <p className="mt-2 text-xs text-[#9CA3AF]">Покажите экран сотруднику</p>
-        </div>
-
+    <div className="relative min-h-screen flex items-center justify-center text-white overflow-hidden">
+      {/* Фон с полосами на всю страницу */}
+      <div
+        className={`pointer-events-none absolute inset-0 opacity-80 ${
+          status === "holding" ? "animate-lines-fast" : "animate-lines"
+        }`}
+      >
         <div
-          className={`relative overflow-hidden rounded-2xl border border-[#1F2937] ${
-            status === "success"
-              ? "shadow-[0_0_30px_rgba(184,251,60,0.4)]"
-              : status === "error"
-              ? "shadow-[0_0_30px_rgba(255,0,0,0.3)]"
-              : "shadow-[0_0_40px_rgba(184,251,60,0.25)]"
-          }`}
+          className="w-[220%] h-full translate-x-[-25%]"
+          style={{
+            background:
+              "repeating-linear-gradient(to right, #B8FB3C 0px, #B8FB3C 2px, transparent 2px, transparent 6px)",
+          }}
+        />
+      </div>
+
+      {/* Тонирующий оверлей по состоянию */}
+      <div
+        className="absolute inset-0"
+        style={{
+          backgroundColor: overlayColor,
+        }}
+      />
+
+      {/* Контент */}
+      <div className="relative z-10 w-full max-w-sm px-6 text-center">
+        <p
+          className="text-sm uppercase tracking-[0.25em] mb-2"
+          style={{ color: "#B8FB3C" }}
         >
-          {/* АНИМАЦИОННЫЕ ЛИНИИ */}
-          <div
-            className={`absolute inset-0 opacity-70 ${
-              status === "holding" ? "animate-lines-fast" : "animate-lines"
-            }`}
+          SMOL.DROP
+        </p>
+        <p className="text-xs text-[#E5E7EB]/80 mb-8">Покажите этот экран сотруднику</p>
+
+        <div className="mb-8">
+          <p
+            className="text-xs uppercase tracking-[0.25em] mb-4"
+            style={{ color: "#B8FB3C" }}
           >
-            <div
-              className="w-[200%] h-full translate-x-[-25%]"
-              style={{
-                background:
-                  "repeating-linear-gradient(to right, #B8FB3C 0px, #B8FB3C 2px, transparent 2px, transparent 6px)",
-              }}
-            />
-          </div>
-
-          {/* ПОЛУПРОЗРАЧНАЯ МАСКА */}
-          <div className="relative z-10 flex flex-col items-center justify-center px-6 py-10 bg-black/40">
-            <p className="text-xs uppercase tracking-[0.2em] mb-3" style={{ color: "#B8FB3C" }}>
-              УДЕРЖИВАЙТЕ
-            </p>
-            <p className="text-4xl font-semibold mb-2" style={{ color: "#B8FB3C" }}>
-              HOLD
-            </p>
-            <p className="text-sm text-center text-[#E5E7EB]">{message}</p>
-          </div>
-
-          {/* ОБЛАСТЬ ДЛЯ ЖЕСТА */}
-          <button
-            type="button"
-            className="absolute inset-0 z-20 touch-none"
-            onMouseDown={startHold}
-            onMouseUp={endHold}
-            onMouseLeave={endHold}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              startHold();
-            }}
-            onTouchEnd={(e) => {
-              e.preventDefault();
-              endHold();
-            }}
-          />
+            УДЕРЖИВАЙТЕ
+          </p>
+          <p
+            className="text-5xl font-semibold mb-3"
+            style={{ color: "#B8FB3C" }}
+          >
+            HOLD
+          </p>
+          <p className="text-sm text-[#F9FAFB]/90">{message}</p>
         </div>
 
-        <p className="mt-4 text-xs text-center text-[#9CA3AF]">
+        <p className="text-xs text-[#E5E7EB]/70">
           Удерживайте палец ~1 секунду. Действие необратимо.
         </p>
       </div>
 
-      {/* АНИМАЦИИ */}
+      {/* Невидимая интерактивная зона на весь экран */}
+      <button
+        type="button"
+        className="absolute inset-0 z-20 touch-none"
+        onMouseDown={startHold}
+        onMouseUp={endHold}
+        onMouseLeave={endHold}
+        onTouchStart={(e) => {
+          e.preventDefault();
+          startHold();
+        }}
+        onTouchEnd={(e) => {
+          e.preventDefault();
+          endHold();
+        }}
+      />
+
+      {/* Анимации полос */}
       <style jsx global>{`
         .animate-lines {
           animation: smol-lines 2.4s linear infinite;
@@ -150,6 +155,9 @@ export default function TicketPage() {
           100% {
             transform: translateX(-75%);
           }
+        }
+        body {
+          background-color: #03045e;
         }
       `}</style>
     </div>
