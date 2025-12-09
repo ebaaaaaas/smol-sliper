@@ -25,7 +25,6 @@ export default function TicketPage() {
   };
 
   const endHold = () => {
-    // убрали палец до HOLD_DURATION_MS — отмена
     if (status !== "holding") return;
 
     if (holdTimeoutRef.current) {
@@ -41,14 +40,14 @@ export default function TicketPage() {
       holdTimeoutRef.current = null;
     }
 
-    // фризим анимацию
+    // freeze — остановили динамику
     setStatus("processing");
     setMessage("");
 
     try {
-      // TODO: сюда потом вставишь настоящий вызов API
+      // TODO: сюда потом вставишь реальный вызов API
       await new Promise((r) => setTimeout(r, 700));
-      const ok = true; // заглушка
+      const ok = true; // заглушка результата
 
       if (ok) {
         setStatus("success");
@@ -68,56 +67,87 @@ export default function TicketPage() {
       ? "#1F8A42"
       : status === "error"
       ? "#8B0000"
-      : "#03045E"; // твой базовый фон
+      : "#03045E";
+
+  const radii = [40, 55, 70, 85, 100, 115, 130];
 
   return (
     <div
       className="relative min-h-screen w-full overflow-hidden flex items-center justify-center"
       style={{ backgroundColor: resultBg }}
     >
-      {/* ДИАГОНАЛЬНЫЕ ЛИНИИ НА ВЕСЬ ЭКРАН */}
+      {/* ЛОАДЕР ИЗ ДУГ */}
       {!isResult && (
-        <div className="pointer-events-none absolute inset-0">
-          <div
-            className={[
-              "smol-stripes",
-              status === "holding" ? "fast" : "",
-              status === "processing" ? "paused" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-          />
+        <div className="relative z-10 flex flex-col items-center justify-center w-full px-6">
+          {/* Бренд сверху, мелко */}
+          <div className="mb-10 text-[10px] tracking-[0.35em] uppercase">
+            <span style={{ color: "#B8FB3C" }}>Smol.Drop</span>
+          </div>
+
+          <div className="flex items-center justify-center">
+            <svg
+              viewBox="-150 -150 300 300"
+              className={[
+                "smol-radar",
+                status === "holding" ? "fast" : "",
+                status === "processing" ? "paused" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              <defs>
+                {/* маска, чтобы оставить только полукруг слева (как на гифке) */}
+                <mask id="half">
+                  <rect x="-150" y="-150" width="300" height="300" fill="black" />
+                  <path
+                    d="M0,-140 A140,140 0 0,0 0,140 L-150,140 L-150,-140 Z"
+                    fill="white"
+                  />
+                </mask>
+              </defs>
+              <g mask="url(#half)">
+                {radii.map((r) => (
+                  <path
+                    key={r}
+                    d={`M0,-${r} A ${r},${r} 0 0,0 0,${r}`}
+                    fill="none"
+                    stroke="#B8FB3C"
+                    strokeWidth={3}
+                    strokeLinecap="round"
+                    opacity={0.9}
+                  />
+                ))}
+              </g>
+            </svg>
+          </div>
+
+          {/* Очень тонкий хинт снизу — при желании можешь удалить */}
+          <div className="mt-10 text-[10px] uppercase tracking-[0.25em] text-white/40">
+            Нажмите и удерживайте
+          </div>
         </div>
       )}
 
-      {/* КОНТЕНТ */}
-      <div className="relative z-10 flex flex-col items-center justify-center w-full min-h-screen px-6">
-        {/* Маленький бренд сверху */}
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 text-[10px] tracking-[0.35em] uppercase">
-          <span style={{ color: "#B8FB3C" }}>Smol.Drop</span>
-        </div>
-
-        {/* Центр — только статус после гашения (ULTRA CLEAN) */}
-        {isResult && (
-          <div className="text-center">
-            <p
-              className="text-4xl font-semibold mb-2"
-              style={{ color: "#B8FB3C" }}
-            >
-              {status === "success" ? "Погашено" : "Ошибка"}
+      {/* Экран после гашения */}
+      {isResult && (
+        <div className="relative z-10 flex flex-col items-center justify-center w-full min-h-screen px-6 text-center">
+          <p
+            className="text-4xl font-semibold mb-2"
+            style={{ color: "#B8FB3C" }}
+          >
+            {status === "success" ? "Погашено" : "Ошибка"}
+          </p>
+          {message && (
+            <p className="text-xs text-[#F9FAFB]/80">
+              {status === "success"
+                ? "Покажите экран сотруднику."
+                : "Обратитесь к персоналу."}
             </p>
-            {message && (
-              <p className="text-xs text-[#F9FAFB]/80">
-                {status === "success"
-                  ? "Покажите экран сотруднику."
-                  : "Обратитесь к персоналу."}
-              </p>
-            )}
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
-      {/* ЖЕСТ НА ВЕСЬ ЭКРАН */}
+      {/* Жест на весь экран */}
       {!isResult && (
         <button
           type="button"
@@ -136,46 +166,28 @@ export default function TicketPage() {
         />
       )}
 
-      {/* СТИЛИ ЛИНИЙ И АНРИМАЦИЙ */}
+      {/* Стили анимации */}
       <style jsx global>{`
-        .smol-stripes {
-          width: 220%;
-          height: 220%;
-          position: absolute;
-          top: -10%;
-          left: -10%;
-          background: repeating-linear-gradient(
-            135deg,
-            #b8fb3c 0px,
-            #b8fb3c 2px,
-            transparent 2px,
-            transparent 16px
-          );
-          animation: smol-diag 2.6s linear infinite;
-          opacity: 0.9;
+        .smol-radar {
+          width: 260px;
+          height: 260px;
+          animation: smol-spin 4.5s linear infinite;
         }
 
-        .smol-stripes.fast {
-          animation-duration: 0.7s;
-          background: repeating-linear-gradient(
-            135deg,
-            #b8fb3c 0px,
-            #b8fb3c 5px,
-            transparent 5px,
-            transparent 18px
-          );
+        .smol-radar.fast {
+          animation-duration: 1.2s;
         }
 
-        .smol-stripes.paused {
+        .smol-radar.paused {
           animation-play-state: paused;
         }
 
-        @keyframes smol-diag {
+        @keyframes smol-spin {
           0% {
-            transform: translateX(-15%);
+            transform: rotate(0deg);
           }
           100% {
-            transform: translateX(-75%);
+            transform: rotate(360deg);
           }
         }
 
