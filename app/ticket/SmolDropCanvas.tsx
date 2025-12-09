@@ -121,7 +121,7 @@ export function SmolDropCanvas() {
   const cy = height / 2;
 
   // Максимальный радиус так, чтобы сектор не обрезался
-  const maxRadius = Math.min(width, height) * 0.45;
+  const maxRadius = Math.min(width, height) * 0.55;
 
   // Параметры от интенсивности (удержание)
   const baseThickness = 2 + intensity * 3;
