@@ -65,26 +65,27 @@ export default function TicketPage() {
       ? "#1f8a42cc"
       : status === "error"
       ? "#8b0000cc"
-      : "#03045ECC"; // твой фирменный фон с прозрачностью
+      : "#03045ECC";
 
   return (
     <div className="relative min-h-screen flex items-center justify-center text-white overflow-hidden">
-      {/* Фон с полосами на всю страницу */}
+      {/* Фон с горизонтальными полосами на весь экран */}
       <div
         className={`pointer-events-none absolute inset-0 opacity-80 ${
           status === "holding" ? "animate-lines-fast" : "animate-lines"
         }`}
       >
         <div
-          className="w-[220%] h-full translate-x-[-25%]"
+          className="w-[220%] h-full translate-x-[-20%]"
           style={{
+            // ГОРИЗОНТАЛЬНЫЕ ПОЛОСЫ: толще + больше просвет
             background:
-              "repeating-linear-gradient(to right, #B8FB3C 0px, #B8FB3C 2px, transparent 2px, transparent 6px)",
+              "repeating-linear-gradient(to bottom, #B8FB3C 0px, #B8FB3C 4px, transparent 4px, transparent 14px)",
           }}
         />
       </div>
 
-      {/* Тонирующий оверлей по состоянию */}
+      {/* Тонирующий оверлей */}
       <div
         className="absolute inset-0"
         style={{
@@ -115,7 +116,7 @@ export default function TicketPage() {
           >
             HOLD
           </p>
-          <p className="text-sm text-[#F9FAFB]/90">{message}</p>
+          <p className="text-sm text-center text-[#F9FAFB]/90">{message}</p>
         </div>
 
         <p className="text-xs text-[#E5E7EB]/70">
@@ -123,7 +124,7 @@ export default function TicketPage() {
         </p>
       </div>
 
-      {/* Невидимая интерактивная зона на весь экран */}
+      {/* Интерактивная зона на весь экран */}
       <button
         type="button"
         className="absolute inset-0 z-20 touch-none"
@@ -150,10 +151,10 @@ export default function TicketPage() {
         }
         @keyframes smol-lines {
           0% {
-            transform: translateX(-25%);
+            transform: translateX(-20%);
           }
           100% {
-            transform: translateX(-75%);
+            transform: translateX(-80%);
           }
         }
         body {
