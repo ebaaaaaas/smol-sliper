@@ -75,7 +75,7 @@ export default function TicketPage() {
       className="relative min-h-screen w-full overflow-hidden flex items-center justify-center"
       style={{ backgroundColor: resultBg }}
     >
-      {/* РАДАР-ЛОАДЕР */}
+      {/* РАДАР-АНИМАЦИЯ */}
       {!isResult && (
         <div className="relative z-10 flex flex-col items-center justify-center w-full px-6">
           {/* Лого сверху, мелко */}
@@ -88,15 +88,15 @@ export default function TicketPage() {
               viewBox="-150 -150 300 300"
               className={[
                 "smol-radar",
-                status === "holding" ? "fast" : "",
+                status === "holding" ? "charged" : "",
                 status === "processing" ? "paused" : "",
               ]
                 .filter(Boolean)
                 .join(" ")}
             >
-              {radii.map((r) => {
+              {radii.map((r, i) => {
                 const circumference = 2 * Math.PI * r;
-                const visible = circumference * 0.6; // часть окружности, которая видна
+                const visible = circumference * 0.55;
                 const gap = circumference - visible;
                 return (
                   <circle
@@ -111,6 +111,7 @@ export default function TicketPage() {
                     strokeDasharray={`${visible} ${gap}`}
                     strokeDashoffset={visible / 2}
                     opacity={0.9}
+                    className={`ring ring-${i} ${i % 2 ? "reverse" : ""}`}
                   />
                 );
               })}
@@ -161,29 +162,89 @@ export default function TicketPage() {
         />
       )}
 
-      {/* Анимация */}
+      {/* АНИМАЦИИ */}
       <style jsx global>{`
         .smol-radar {
           width: 260px;
           height: 260px;
-          animation: smol-spin 4.5s linear infinite;
+          filter: drop-shadow(0 0 18px rgba(184, 251, 60, 0.35));
+          animation: radar-pulse 4s ease-in-out infinite;
         }
 
-        .smol-radar.fast {
-          animation-duration: 1.2s;
+        .smol-radar.charged {
+          animation-duration: 1.6s;
+          filter: drop-shadow(0 0 26px rgba(184, 251, 60, 0.6));
+        }
+
+        .ring {
           transform-origin: center;
+          animation: ring-move 3.2s linear infinite;
         }
 
-        .smol-radar.paused {
+        /* разная задержка и направление для разных колец */
+        .ring-0 {
+          animation-duration: 3.4s;
+          animation-delay: 0s;
+        }
+        .ring-1 {
+          animation-duration: 3s;
+          animation-delay: 0.1s;
+        }
+        .ring-2 {
+          animation-duration: 2.6s;
+          animation-delay: 0.2s;
+        }
+        .ring-3 {
+          animation-duration: 2.2s;
+          animation-delay: 0.3s;
+        }
+        .ring-4 {
+          animation-duration: 2.8s;
+          animation-delay: 0.4s;
+        }
+        .ring-5 {
+          animation-duration: 3.6s;
+          animation-delay: 0.5s;
+        }
+        .ring-6 {
+          animation-duration: 4.2s;
+          animation-delay: 0.6s;
+        }
+
+        .ring.reverse {
+          animation-direction: reverse;
+        }
+
+        .smol-radar.charged .ring {
+          animation-duration: 1s;
+          stroke-width: 4;
+        }
+
+        .smol-radar.paused .ring {
           animation-play-state: paused;
         }
 
-        @keyframes smol-spin {
+        @keyframes ring-move {
           0% {
+            stroke-dashoffset: 0;
             transform: rotate(0deg);
           }
+          50% {
+            transform: rotate(6deg);
+          }
           100% {
-            transform: rotate(360deg);
+            stroke-dashoffset: -360;
+            transform: rotate(0deg);
+          }
+        }
+
+        @keyframes radar-pulse {
+          0%,
+          100% {
+            transform: scale(1);
+          }
+          50% {
+            transform: scale(1.03);
           }
         }
 
