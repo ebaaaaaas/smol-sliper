@@ -113,99 +113,89 @@ export function SmolDropCanvas() {
 
     // -------- РАДАР-ВИЗУАЛ --------
             function drawScene(t: number) {
-      ctx.fillStyle = COLORS.bg;
-      ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = COLORS.bg;
+  ctx.fillRect(0, 0, width, height);
 
-      // Центр строго по середине экрана
-      const cx = width / 2;
-      const cy = height / 2;
+  // Центр строго по середине экрана
+  const cx = width / 2;
+  const cy = height / 2;
 
-      // Максимальный радиус так, чтобы сектор не обрезался
-      const maxRadius = Math.min(width, height) * 0.45;
+  // Максимальный радиус так, чтобы сектор не обрезался
+  const maxRadius = Math.min(width, height) * 0.45;
 
-      // Параметры от интенсивности (удержание)
-      const baseThickness = 2 + intensity * 3;
-      const baseSpeed = 0.35 + intensity * 1.1;
+  // Параметры от интенсивности (удержание)
+  const baseThickness = 2 + intensity * 3;
+  const baseSpeed = 0.35 + intensity * 1.1;
 
-      const bands = 9;                 // количество полос
-      const angleSpan = Math.PI * 0.5; // ~90°, сектор как у радара
+  const bands = 9;                 // количество полос
+  const angleSpan = Math.PI * 0.5; // ~90°, сектор как у радара
 
-      for (let i = 0; i < bands; i++) {
-        const k = i / Math.max(1, bands - 1); // 0 (внутр.) → 1 (внешн.)
+  for (let i = 0; i < bands; i++) {
+    const k = i / Math.max(1, bands - 1); // 0 (внутр.) → 1 (внешн.)
 
-        // радиус текущей полосы
-        const r = maxRadius * (0.2 + 0.06 * i);
+    // радиус текущей полосы
+    const r = maxRadius * (0.2 + 0.06 * i);
 
-        // внутренние быстрее, внешние медленнее
-        const speedFactor = 1.7 - 0.8 * k; // inner ~1.7, outer ~0.9
-        const phase = t * baseSpeed * speedFactor;
+    // внутренние быстрее, внешние медленнее
+    const speedFactor = 1.7 - 0.8 * k; // inner ~1.7, outer ~0.9
+    const phase = t * baseSpeed * speedFactor;
 
-        // сектор всегда "смотрит" вправо, с лёгким дрожанием
-        const baseDir = 0; // 0 рад = вправо
-        const midAngle = baseDir + 0.05 * Math.sin(t * 0.5);
-        const startAngle = midAngle - angleSpan / 2 + phase;
-        const endAngle = midAngle + angleSpan / 2 + phase;
+    // сектор "смотрит" вправо, с лёгким дрожанием
+    const baseDir = 0; // 0 рад = вправо
+    const midAngle = baseDir + 0.05 * Math.sin(t * 0.5);
+    const startAngle = midAngle - angleSpan / 2 + phase;
+    const endAngle = midAngle + angleSpan / 2 + phase;
 
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, startAngle, endAngle);
-        ctx.lineWidth = baseThickness * (0.8 + 0.3 * (1 - k));
-        ctx.strokeStyle = COLORS.accent;
-        ctx.globalAlpha = 0.4 + 0.2 * (1 - k) + 0.2 * intensity;
-        ctx.lineCap = "round";
-        ctx.stroke();
-        ctx.restore();
-      }
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, startAngle, endAngle);
+    ctx.lineWidth = baseThickness * (0.8 + 0.3 * (1 - k));
+    ctx.strokeStyle = COLORS.accent;
+    ctx.globalAlpha = 0.4 + 0.2 * (1 - k) + 0.2 * intensity;
+    ctx.lineCap = "round";
+    ctx.stroke();
+    ctx.restore();
+  }
 
-      // центральный glow
-      const coreR = maxRadius * 0.18;
-      const glowR = coreR * (2.0 + 0.7 * intensity);
-      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
-      grad.addColorStop(0, "rgba(184,251,60,0.30)");
-      grad.addColorStop(1, "rgba(184,251,60,0)");
-      ctx.save();
-      ctx.fillStyle = grad;
-      ctx.fillRect(cx - glowR, cy - glowR, glowR * 2, glowR * 2);
-      ctx.restore();
+  // прогресс удержания — тонкая дуга вокруг центра
+  if (holdProgress > 0.01) {
+    const progAngle = holdProgress * Math.PI * 2;
+    const progRadius = maxRadius * 0.24;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(
+      cx,
+      cy,
+      progRadius,
+      -Math.PI / 2,
+      -Math.PI / 2 + progAngle
+    );
+    ctx.lineWidth = 3 + 2 * intensity;
+    ctx.strokeStyle = COLORS.accent;
+    ctx.globalAlpha = 0.95;
+    ctx.lineCap = "round";
+    ctx.stroke();
+    ctx.restore();
+  }
 
-      // прогресс удержания — тонкая дуга вокруг glow
-      if (holdProgress > 0.01) {
-        const progAngle = holdProgress * Math.PI * 2;
-        const progRadius = maxRadius * 0.24;
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(
-          cx,
-          cy,
-          progRadius,
-          -Math.PI / 2,
-          -Math.PI / 2 + progAngle
-        );
-        ctx.lineWidth = 3 + 2 * intensity;
-        ctx.strokeStyle = COLORS.accent;
-        ctx.globalAlpha = 0.95;
-        ctx.lineCap = "round";
-        ctx.stroke();
-        ctx.restore();
-      }
+  // состояния поверх
+  if (state === "success") {
+    ctx.save();
+    ctx.fillStyle = COLORS.successOverlay;
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+    drawLabel("Билет погашён", cx, cy);
+  } else if (state === "error") {
+    ctx.save();
+    ctx.fillStyle = COLORS.errorOverlay;
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+    drawLabel("Ошибка", cx, cy);
+  } else if (state === "pending") {
+    drawLabel("Проверка…", cx, cy);
+  }
+}
 
-      // состояния поверх
-      if (state === "success") {
-        ctx.save();
-        ctx.fillStyle = COLORS.successOverlay;
-        ctx.fillRect(0, 0, width, height);
-        ctx.restore();
-        drawLabel("Билет погашён", cx, cy);
-      } else if (state === "error") {
-        ctx.save();
-        ctx.fillStyle = COLORS.errorOverlay;
-        ctx.fillRect(0, 0, width, height);
-        ctx.restore();
-        drawLabel("Ошибка", cx, cy);
-      } else if (state === "pending") {
-        drawLabel("Проверка…", cx, cy);
-      }
-    }
 
 
 
