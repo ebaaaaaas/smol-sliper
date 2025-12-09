@@ -130,32 +130,39 @@ export function SmolDropCanvas() {
   const bands = 9;                 // количество полос
   const angleSpan = Math.PI * 0.5; // ~90°, сектор как у радара
 
-  for (let i = 0; i < bands; i++) {
-    const k = i / Math.max(1, bands - 1); // 0 (внутр.) → 1 (внешн.)
+  // Толстые красивые полосы как в Apple Watch
+for (let i = 0; i < bands; i++) {
+  const k = i / Math.max(1, bands - 1);
 
-    // радиус текущей полосы
-    const r = maxRadius * (0.2 + 0.06 * i);
+  const r = maxRadius * (0.22 + 0.065 * i);
 
-    // внутренние быстрее, внешние медленнее
-    const speedFactor = 1.7 - 0.8 * k; // inner ~1.7, outer ~0.9
-    const phase = t * baseSpeed * speedFactor;
+  // Скорость: внутренние быстрее
+  const speedFactor = 1.6 - 0.7 * k;
+  const phase = t * baseSpeed * speedFactor;
 
-    // сектор "смотрит" вправо, с лёгким дрожанием
-    const baseDir = 0; // 0 рад = вправо
-    const midAngle = baseDir + 0.05 * Math.sin(t * 0.5);
-    const startAngle = midAngle - angleSpan / 2 + phase;
-    const endAngle = midAngle + angleSpan / 2 + phase;
+  const baseDir = 0; // вправо
+  const midAngle = baseDir;
+  const startAngle = midAngle - angleSpan / 2 + phase;
+  const endAngle = midAngle + angleSpan / 2 + phase;
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, startAngle, endAngle);
-    ctx.lineWidth = baseThickness * (0.8 + 0.3 * (1 - k));
-    ctx.strokeStyle = COLORS.accent;
-    ctx.globalAlpha = 0.4 + 0.2 * (1 - k) + 0.2 * intensity;
-    ctx.lineCap = "round";
-    ctx.stroke();
-    ctx.restore();
-  }
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, startAngle, endAngle);
+
+  // Толстые линии
+  const lineWidth = 8 + intensity * 4; // БАЗА = 8px, при удержании до 12px
+  ctx.lineWidth = lineWidth;
+
+  ctx.strokeStyle = COLORS.accent;
+
+  // Меньше прозрачности — более плотный вид
+  ctx.globalAlpha = 0.75 - 0.4 * k + 0.2 * intensity;
+
+  ctx.lineCap = "round";
+  ctx.stroke();
+  ctx.restore();
+}
+
 
   // прогресс удержания — тонкая дуга вокруг центра
   if (holdProgress > 0.01) {
