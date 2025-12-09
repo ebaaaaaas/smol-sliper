@@ -112,41 +112,43 @@ export function SmolDropCanvas() {
     }
 
     // -------- РАДАР-ВИЗУАЛ --------
-        function drawScene(t: number) {
+            function drawScene(t: number) {
       ctx.fillStyle = COLORS.bg;
       ctx.fillRect(0, 0, width, height);
 
-      // Центр ближе к левой стороне, чтобы сектор "смотрел" вправо
-      const cx = width * 0.22;
-      const cy = height * 0.5;
+      // Центр строго по середине экрана
+      const cx = width / 2;
+      const cy = height / 2;
 
-      const maxRadius = Math.min(width, height) * 0.55;
+      // Максимальный радиус так, чтобы сектор не обрезался
+      const maxRadius = Math.min(width, height) * 0.45;
 
       // Параметры от интенсивности (удержание)
       const baseThickness = 2 + intensity * 3;
       const baseSpeed = 0.35 + intensity * 1.1;
 
-      const bands = 9;              // количество полос
-      const angleSpan = Math.PI * 0.5; // ~90°, сектор как на гифке
+      const bands = 9;                 // количество полос
+      const angleSpan = Math.PI * 0.5; // ~90°, сектор как у радара
 
       for (let i = 0; i < bands; i++) {
-        const k = i / Math.max(1, bands - 1); // 0 (внутренняя) → 1 (внешняя)
+        const k = i / Math.max(1, bands - 1); // 0 (внутр.) → 1 (внешн.)
 
         // радиус текущей полосы
         const r = maxRadius * (0.2 + 0.06 * i);
 
         // внутренние быстрее, внешние медленнее
         const speedFactor = 1.7 - 0.8 * k; // inner ~1.7, outer ~0.9
-        const angle = t * baseSpeed * speedFactor;
+        const phase = t * baseSpeed * speedFactor;
 
-        // центр сектора всегда смотрит вправо (0 рад), но есть небольшое «дрожание»
-        const midAngle = 0 + 0.05 * Math.sin(t * 0.5);
-        const startAngle = midAngle - angleSpan / 2;
-        const endAngle = midAngle + angleSpan / 2;
+        // сектор всегда "смотрит" вправо, с лёгким дрожанием
+        const baseDir = 0; // 0 рад = вправо
+        const midAngle = baseDir + 0.05 * Math.sin(t * 0.5);
+        const startAngle = midAngle - angleSpan / 2 + phase;
+        const endAngle = midAngle + angleSpan / 2 + phase;
 
         ctx.save();
         ctx.beginPath();
-        ctx.arc(cx, cy, r, startAngle + angle, endAngle + angle);
+        ctx.arc(cx, cy, r, startAngle, endAngle);
         ctx.lineWidth = baseThickness * (0.8 + 0.3 * (1 - k));
         ctx.strokeStyle = COLORS.accent;
         ctx.globalAlpha = 0.4 + 0.2 * (1 - k) + 0.2 * intensity;
@@ -204,6 +206,7 @@ export function SmolDropCanvas() {
         drawLabel("Проверка…", cx, cy);
       }
     }
+
 
 
     function loop(now: number) {
