@@ -40,14 +40,13 @@ export default function TicketPage() {
       holdTimeoutRef.current = null;
     }
 
-    // freeze — остановили динамику
     setStatus("processing");
     setMessage("");
 
     try {
       // TODO: сюда потом вставишь реальный вызов API
       await new Promise((r) => setTimeout(r, 700));
-      const ok = true; // заглушка результата
+      const ok = true; // заглушка
 
       if (ok) {
         setStatus("success");
@@ -76,12 +75,12 @@ export default function TicketPage() {
       className="relative min-h-screen w-full overflow-hidden flex items-center justify-center"
       style={{ backgroundColor: resultBg }}
     >
-      {/* ЛОАДЕР ИЗ ДУГ */}
+      {/* РАДАР-ЛОАДЕР */}
       {!isResult && (
         <div className="relative z-10 flex flex-col items-center justify-center w-full px-6">
-          {/* Бренд сверху, мелко */}
+          {/* Лого сверху, мелко */}
           <div className="mb-10 text-[10px] tracking-[0.35em] uppercase">
-            <span style={{ color: "#B8FB3C" }}>Smol.Drop</span>
+            <span style={{ color: "#B8FB3C" }}>SMOL.DROP</span>
           </div>
 
           <div className="flex items-center justify-center">
@@ -95,35 +94,31 @@ export default function TicketPage() {
                 .filter(Boolean)
                 .join(" ")}
             >
-              <defs>
-                {/* маска, чтобы оставить только полукруг слева (как на гифке) */}
-                <mask id="half">
-                  <rect x="-150" y="-150" width="300" height="300" fill="black" />
-                  <path
-                    d="M0,-140 A140,140 0 0,0 0,140 L-150,140 L-150,-140 Z"
-                    fill="white"
-                  />
-                </mask>
-              </defs>
-              <g mask="url(#half)">
-                {radii.map((r) => (
-                  <path
+              {radii.map((r) => {
+                const circumference = 2 * Math.PI * r;
+                const visible = circumference * 0.6; // часть окружности, которая видна
+                const gap = circumference - visible;
+                return (
+                  <circle
                     key={r}
-                    d={`M0,-${r} A ${r},${r} 0 0,0 0,${r}`}
+                    cx="0"
+                    cy="0"
+                    r={r}
                     fill="none"
                     stroke="#B8FB3C"
                     strokeWidth={3}
                     strokeLinecap="round"
+                    strokeDasharray={`${visible} ${gap}`}
+                    strokeDashoffset={visible / 2}
                     opacity={0.9}
                   />
-                ))}
-              </g>
+                );
+              })}
             </svg>
           </div>
 
-          {/* Очень тонкий хинт снизу — при желании можешь удалить */}
           <div className="mt-10 text-[10px] uppercase tracking-[0.25em] text-white/40">
-            Нажмите и удерживайте
+            НАЖМИТЕ И УДЕРЖИВАЙТЕ
           </div>
         </div>
       )}
@@ -166,7 +161,7 @@ export default function TicketPage() {
         />
       )}
 
-      {/* Стили анимации */}
+      {/* Анимация */}
       <style jsx global>{`
         .smol-radar {
           width: 260px;
@@ -176,6 +171,7 @@ export default function TicketPage() {
 
         .smol-radar.fast {
           animation-duration: 1.2s;
+          transform-origin: center;
         }
 
         .smol-radar.paused {
