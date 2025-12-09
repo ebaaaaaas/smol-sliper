@@ -1,18 +1,15 @@
-"use client";
-
 import React, { useState, useRef } from "react";
-import { useSearchParams } from "next/navigation";
 
 const HOLD_DURATION_MS = 800;
 
 type Status = "idle" | "holding" | "processing" | "success" | "error";
 
 export default function TicketPage() {
-  const searchParams = useSearchParams();
-  const ticketId = searchParams.get("uuid"); // если передаёшь uuid в query
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState<string>("");
   const holdTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const isResult = status === "success" || status === "error";
 
   const startHold = () => {
     if (status !== "idle") return;
@@ -26,7 +23,7 @@ export default function TicketPage() {
   };
 
   const endHold = () => {
-    // если не успели досчитать до HOLD_DURATION_MS — откат
+    // палец убрали до нужного времени — откат
     if (status !== "holding") return;
 
     if (holdTimeoutRef.current) {
@@ -42,30 +39,14 @@ export default function TicketPage() {
       holdTimeoutRef.current = null;
     }
 
-    // freeze: останавливаем анимацию
+    // freeze — остановили динамику
     setStatus("processing");
     setMessage("");
 
     try {
-      if (!ticketId) {
-        setStatus("error");
-        setMessage("Билет не найден.");
-        return;
-      }
-
-      // TODO: подставь свой реальный эндпоинт гашения
-      // пример:
-      /*
-      const res = await fetch(`/api/redeem?uuid=${ticketId}`, {
-        method: "POST",
-      });
-      const data = await res.json();
-      if (res.ok && data.result === "success") { ... }
-      */
-
-      // заглушка вместо реального запроса
+      // 🔹 ЗАГЛУШКА: здесь пока нет реального API, только эффект
       await new Promise((r) => setTimeout(r, 700));
-      const ok = true; // тут подставишь результат от бэка
+      const ok = true;
 
       if (ok) {
         setStatus("success");
@@ -80,14 +61,12 @@ export default function TicketPage() {
     }
   };
 
-  const isResult = status === "success" || status === "error";
-
   const resultBg =
     status === "success"
-      ? "#1F8A42" // зелёный успех
+      ? "#1F8A42"
       : status === "error"
-      ? "#8B0000" // красный ошибка
-      : "#03045E"; // твой базовый фон
+      ? "#8B0000"
+      : "#03045E";
 
   return (
     <div
@@ -111,12 +90,11 @@ export default function TicketPage() {
 
       {/* КОНТЕНТ */}
       <div className="relative z-10 flex flex-col items-center justify-center w-full min-h-screen px-6">
-        {/* Маленький бренд сверху */}
+        {/* Маленький бренд */}
         <div className="absolute top-6 left-1/2 -translate-x-1/2 text-[10px] tracking-[0.35em] uppercase">
           <span style={{ color: "#B8FB3C" }}>Smol.Drop</span>
         </div>
 
-        {/* Центр: только статус после гашения, до этого — пусто (ultra clean) */}
         {isResult && (
           <div className="text-center">
             <p
@@ -136,7 +114,7 @@ export default function TicketPage() {
         )}
       </div>
 
-      {/* ИНТЕРАКТИВНАЯ ЗОНА НА ВЕСЬ ЭКРАН */}
+      {/* ЖЕСТ НА ВЕСЬ ЭКРАН */}
       {!isResult && (
         <button
           type="button"
@@ -155,7 +133,7 @@ export default function TicketPage() {
         />
       )}
 
-      {/* СТИЛИ ДЛЯ ЛИНИЙ И АНИМАЦИИ */}
+      {/* СТИЛИ ДЛЯ ЛИНИЙ */}
       <style jsx global>{`
         .smol-stripes {
           width: 220%;
