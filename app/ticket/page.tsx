@@ -97,27 +97,19 @@ export default function TicketPage() {
                 .filter(Boolean)
                 .join(" ")}
             >
-              {radii.map((r, i) => {
-                const circumference = 2 * Math.PI * r;
-                const visible = circumference * 0.55;
-                const gap = circumference - visible;
-                return (
-                  <circle
+              <g className="radar-group">
+                {radii.map((r) => (
+                  <path
                     key={r}
-                    cx="0"
-                    cy="0"
-                    r={r}
+                    d={`M 0 -${r} A ${r} ${r} 0 0 1 0 ${r}`}
                     fill="none"
                     stroke="#B8FB3C"
                     strokeWidth={3}
                     strokeLinecap="round"
-                    strokeDasharray={`${visible} ${gap}`}
-                    strokeDashoffset={visible / 2}
                     opacity={0.9}
-                    className={`ring ring-${i}`}
                   />
-                );
-              })}
+                ))}
+              </g>
             </svg>
           </div>
 
@@ -176,45 +168,21 @@ export default function TicketPage() {
           filter: drop-shadow(0 0 18px rgba(184, 251, 60, 0.35));
         }
 
-        .ring {
+        .radar-group {
           transform-origin: center;
-          animation: ring-spin 4s linear infinite;
+          animation: radar-rotate 3s linear infinite;
         }
 
-        /* ближе к центру — быстрее */
-        .ring-0 {
-          animation-duration: 2s;
-        }
-        .ring-1 {
-          animation-duration: 2.3s;
-        }
-        .ring-2 {
-          animation-duration: 2.6s;
-        }
-        .ring-3 {
-          animation-duration: 2.9s;
-        }
-        .ring-4 {
-          animation-duration: 3.2s;
-        }
-        .ring-5 {
-          animation-duration: 3.5s;
-        }
-        .ring-6 {
-          animation-duration: 3.8s;
-        }
-
-        .smol-radar.charged .ring {
-          animation-duration: 1.1s;
-          stroke-width: 4;
+        .smol-radar.charged .radar-group {
+          animation-duration: 0.9s;
           filter: drop-shadow(0 0 26px rgba(184, 251, 60, 0.6));
         }
 
-        .smol-radar.paused .ring {
+        .smol-radar.paused .radar-group {
           animation-play-state: paused;
         }
 
-        @keyframes ring-spin {
+        @keyframes radar-rotate {
           0% {
             transform: rotate(0deg);
           }
