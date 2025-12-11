@@ -10,20 +10,27 @@ const COLORS = {
   text: "#FFFFFF",
 };
 
-// ====== НАСТРОЙКИ АНИМАЦИИ (КРУГИ КАК НА GIF) ======
+// ====== НАСТРОЙКИ АНИМАЦИИ (КАПЛЯ + ВОЛНА) ======
 const CONFIG = {
   waves: {
-    maxRadiusFactor: 0.9,   // докуда доходят кольца (0.9 ~ почти до краёв)
-    spacing: 32,            // расстояние между кольцами в px
-    speedIdle: 20,          // скорость в покое (px/сек)
-    speedActive: 55,        // скорость при удержании
-    lineWidthIdle: 5,       // толщина в покое
-    lineWidthActive: 9,     // толщина при удержании
-    alphaCenter: 0.9,       // яркость ближе к центру
-    alphaEdge: 0.12,        // яркость у края
+    maxRadiusFactor: 0.95,   // докуда доходят кольца (0.95 ~ почти до краёв)
+    spacing: 34,             // базовое расстояние между кольцами (px)
+    speedIdle: 110,          // скорость волны в покое (px/сек)
+    speedActive: 190,        // скорость волны при удержании
+    lineWidthIdle: 6,        // толщина колец в покое
+    lineWidthActive: 10,     // толщина при удержании
+
+    // параметры "ударной волны"
+    pulseAmplitudeIdle: 22,  // деформация колец в покое (px)
+    pulseAmplitudeActive: 42,// деформация при удержании (px)
+    pulseWidth: 120,         // ширина области деформации вдоль радиуса (чем больше — мягче)
+    distortionFrequency: 2.6,// внутренняя частота колебаний внутри волны
+
+    alphaCenter: 0.9,        // яркость ближе к центру
+    alphaEdge: 0.12,         // яркость у края
   },
   progress: {
-    radiusFactor: 0.16,     // радиус кольца прогресса относительно min(width,height)
+    radiusFactor: 0.16,      // радиус кольца прогресса относительно min(width,height)
     lineWidthBase: 3,
     lineWidthBoost: 2,
   },
@@ -142,7 +149,12 @@ export function SmolDropCanvas() {
       const minSide = Math.min(width, height);
       const maxRadius = minSide * CONFIG.waves.maxRadiusFactor;
 
-      // толщина колец и скорость в зависимости от удержания
+      const spacing = CONFIG.waves.spacing;
+
+      // базовый статический центральный круг (как точка удара)
+      const coreRadius = spacing * 0.7;
+
+      // толщина колец и параметры волны от интенсивности
       const lineWidth =
         CONFIG.waves.lineWidthIdle +
         (CONFIG.waves.lineWidthActive - CONFIG.waves.lineWidthIdle) *
@@ -152,32 +164,68 @@ export function SmolDropCanvas() {
         CONFIG.waves.speedIdle +
         (CONFIG.waves.speedActive - CONFIG.waves.speedIdle) * intensity;
 
-      const spacing = CONFIG.waves.spacing;
+      const pulseAmplitude =
+        CONFIG.waves.pulseAmplitudeIdle +
+        (CONFIG.waves.pulseAmplitudeActive -
+          CONFIG.waves.pulseAmplitudeIdle) *
+          intensity;
 
-      // Сколько колец нужно, чтобы покрыть радиус
-      const ringCount = Math.ceil(maxRadius / spacing) + 2;
+      const sigma = CONFIG.waves.pulseWidth;
+      const omega = CONFIG.waves.distortionFrequency * 2 * Math.PI;
 
-      // Смещение "поезда" колец
-      const offset = (t * waveSpeed) % spacing;
+      // рисуем статичное центральное кольцо
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, coreRadius, 0, Math.PI * 2);
+      ctx.lineWidth = lineWidth;
+      ctx.strokeStyle = COLORS.accent;
+      ctx.globalAlpha = 0.9;
+      ctx.lineCap = "round";
+      ctx.stroke();
+      ctx.restore();
 
-      // -------- КОЛЬЦА, КАК НА GIF --------
+      // положение фронта волны (как капля, бегущая наружу)
+      const front =
+        (t * waveSpeed) % (maxRadius + spacing + sigma * 2);
+
+      // сколько колец нужно
+      const ringCount = Math.ceil(maxRadius / spacing) + 6;
+
+      // -------- ОСНОВНЫЕ КОЛЬЦА С ДЕФОРМАЦИЕЙ --------
       for (let i = 0; i < ringCount; i++) {
-        const radius = offset + i * spacing;
-        if (radius <= 0 || radius > maxRadius) continue;
+        const baseR = coreRadius + i * spacing;
+        if (baseR <= 0 || baseR > maxRadius + sigma) continue;
 
-        const fade = 1 - radius / maxRadius; // ближе к центру — ярче
+        // расстояние кольца от фронта волны
+        const dist = baseR - front;
+
+        // гауссово затухание деформации вокруг фронта
+        const gauss = Math.exp(
+          -((dist * dist) / (2 * sigma * sigma))
+        );
+
+        // локальное колебание (сжатие/расширение)
+        const oscillation = Math.sin(dist / sigma - t * omega);
+
+        const offset = pulseAmplitude * gauss * oscillation;
+
+        const radius = baseR + offset;
+        if (radius <= coreRadius || radius > maxRadius) continue;
+
+        const fade = 1 - radius / maxRadius;
         if (fade <= 0.02) continue;
 
         const alpha =
           CONFIG.waves.alphaEdge +
-          (CONFIG.waves.alphaCenter - CONFIG.waves.alphaEdge) * fade;
+          (CONFIG.waves.alphaCenter - CONFIG.waves.alphaEdge) *
+            fade;
 
         ctx.save();
         ctx.beginPath();
         ctx.arc(cx, cy, radius, 0, Math.PI * 2);
         ctx.lineWidth = lineWidth;
         ctx.strokeStyle = COLORS.accent;
-        ctx.globalAlpha = alpha * (0.7 + 0.3 * intensity);
+        ctx.globalAlpha = alpha * (0.8 + 0.2 * intensity);
         ctx.lineCap = "round";
         ctx.stroke();
         ctx.restore();
