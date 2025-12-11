@@ -10,6 +10,33 @@ const COLORS = {
   text: "#FFFFFF",
 };
 
+// ====== ВСЕ НАСТРОЙКИ АНИМАЦИИ ТУТ ======
+const CONFIG = {
+  pulse: {
+    enabled: true,          // выключить "сердцебиение" центра → false
+    basePeriod: 1.4,        // чем БОЛЬШЕ — тем медленнее ритм
+    activeFactor: 0.7,      // при удержании период *= activeFactor (0.7 = чуть быстрее)
+    radiusFactor: 0.09,     // размер центрального круга относительно экрана
+    pulseScale: 0.35,       // насколько сильно "раздувается" круг при ударе
+  },
+  waves: {
+    count: 18,              // СКОЛЬКО колец одновременно видно
+    maxRadiusFactor: 0.55,  // докуда они доходят (0.55 ~ чуть не до краёв)
+    speedIdle: 0.18,        // скорость в покое (меньше → медленнее)
+    speedActive: 0.45,      // скорость при удержании (больше → быстрее)
+    lineWidthIdle: 4,       // толщина волн в покое
+    lineWidthActive: 7,     // толщина при удержании
+    alphaCenter: 0.7,       // яркость волн ближе к центру
+    alphaEdge: 0.08,        // яркость у края
+  },
+  progress: {
+    radiusMultiplier: 1.8,  // радиус кольца прогресса относительно coreRadius
+    lineWidthBase: 3,
+    lineWidthBoost: 2,
+  },
+};
+// ====== КОНЕЦ НАСТРОЕК ======
+
 type CanvasState = "idle" | "holding" | "pending" | "success" | "error";
 
 export function SmolDropCanvas() {
@@ -31,14 +58,13 @@ export function SmolDropCanvas() {
     let state: CanvasState = "idle";
     let holdStart = 0;
     let holdProgress = 0;
-    let intensity = 0;
+    let intensity = 0;        // 0 = idle, 1 = hold
     let targetIntensity = 0;
     let lastTime = performance.now();
     let redeemCalled = false;
     let frameId: number | null = null;
     let apiTimeoutId: number | null = null;
 
-    // iOS: вырубаем контекстное меню / селект
     const preventDefault = (e: Event) => e.preventDefault();
     window.addEventListener("contextmenu", preventDefault);
     document.addEventListener("selectstart", preventDefault);
@@ -60,9 +86,8 @@ export function SmolDropCanvas() {
       redeemCalled = true;
       state = "pending";
 
-      // TODO: реальный API-вызов
       apiTimeoutId = window.setTimeout(() => {
-        const ok = true; // заменить на реальный результат
+        const ok = true; // TODO: заменить на реальный результат API
         state = ok ? "success" : "error";
         targetIntensity = ok ? 0.6 : 0.2;
       }, 400);
@@ -111,92 +136,103 @@ export function SmolDropCanvas() {
       ctx.restore();
     }
 
-    // ---------- ВОЛНЫ ОТ ЦЕНТРА ----------
-        function drawScene(t: number) {
+    function drawScene(now: number) {
+      const t = now / 1000;
+
       // фон
       ctx.fillStyle = COLORS.bg;
       ctx.fillRect(0, 0, width, height);
 
-      // центр экрана
       const cx = width / 2;
       const cy = height / 2;
 
-      const maxRadius = Math.min(width, height) * 0.5;
+      const maxRadius =
+        Math.min(width, height) * CONFIG.waves.maxRadiusFactor;
 
-      // -------- ПАРАМЕТРЫ СЕРДЦЕБИЕНИЯ --------
+      // -------- СЕРДЕЧНЫЙ РИТМ ЦЕНТРА --------
+      let coreRadius = maxRadius * CONFIG.pulse.radiusFactor;
+      let pulse = 0;
 
-      // базовый период удара (сек)
-      const basePeriod = 1.5; // ~60 ударов в минуту
-      // при удержании бьётся чаще (до ~70–80)
-      const heartbeatPeriod = basePeriod * (1 - 0.35 * intensity);
-      const heartbeatPhase = t / heartbeatPeriod;           // растёт постоянно
-      const beatPhase = heartbeatPhase - Math.floor(heartbeatPhase); // 0..1 внутри одного удара
+      if (CONFIG.pulse.enabled) {
+        const basePeriod = CONFIG.pulse.basePeriod;
+        const heartbeatPeriod =
+          basePeriod *
+          (1 - (1 - CONFIG.pulse.activeFactor) * intensity); // чуть быстрее при hold
 
-      // плавный "удар": резкий пик и затухание
-      // sin(π * x) даёт 0 → пик → 0 за один цикл
-      const s = Math.sin(Math.PI * beatPhase); // 0..1..0
-      const pulse = Math.max(0, s * s * s);    // подчёркиваем пик
+        const heartbeatPhase = t / heartbeatPeriod;
+        const beatPhase = heartbeatPhase - Math.floor(heartbeatPhase); // 0..1
 
-      // -------- ЦЕНТРАЛЬНЫЙ КРУГ (СЕРДЦЕ) --------
+        const s = Math.sin(Math.PI * beatPhase);
+        pulse = Math.max(0, s * s * s);
 
-      const baseCoreRadius = maxRadius * 0.09;
-      const coreRadius = baseCoreRadius * (1 + 0.35 * pulse); // "ёкает"
+        coreRadius =
+          coreRadius * (1 + CONFIG.pulse.pulseScale * pulse);
+      }
 
-      const baseLineWidth = 4 + intensity * 4; // общая толщина линий
+      const baseLineWidth =
+        CONFIG.waves.lineWidthIdle +
+        (CONFIG.waves.lineWidthActive - CONFIG.waves.lineWidthIdle) *
+          intensity;
 
+      // центральное кольцо
       ctx.save();
       ctx.beginPath();
       ctx.arc(cx, cy, coreRadius, 0, Math.PI * 2);
       ctx.lineWidth = baseLineWidth;
       ctx.strokeStyle = COLORS.accent;
-      ctx.globalAlpha = 0.7 + 0.3 * pulse; // ярче в момент удара
+      ctx.globalAlpha = 0.7 + 0.3 * pulse;
       ctx.lineCap = "round";
       ctx.stroke();
       ctx.restore();
 
-      // лёгкий внутренний диск при пике — ощущение "удара"
+      // небольшой заполнитель внутри (опционально)
       if (pulse > 0.1) {
         ctx.save();
         ctx.beginPath();
         ctx.arc(cx, cy, coreRadius * 0.6, 0, Math.PI * 2);
         ctx.fillStyle = COLORS.accent;
-        ctx.globalAlpha = 0.15 + 0.35 * pulse;
+        ctx.globalAlpha = 0.12 + 0.25 * pulse;
         ctx.fill();
         ctx.restore();
       }
 
-         // -------- ПОСТОЯННЫЕ ВОЛНЫ ОТ ЦЕНТРА --------
-    // волны больше НЕ завязаны на heartbeatPhase — только на времени t
-    const waveCount = 16; // сколько колец одновременно видно
-    const waveSpeedBase = 0.25 + 0.4 * intensity; // скорость движения волн
+      // -------- БЕСКОНЕЧНЫЕ ВОЛНЫ ОТ ЦЕНТРА --------
+      const waveSpeed =
+        CONFIG.waves.speedIdle +
+        (CONFIG.waves.speedActive - CONFIG.waves.speedIdle) *
+          intensity;
 
-    const waveLineWidth = baseLineWidth * 1.0; // толщина линий
+      const waveCount = CONFIG.waves.count;
 
-    for (let i = 0; i < waveCount; i++) {
-      // phase: 0..1 — где сейчас волна между центром и краем
-      const phase = (t * waveSpeedBase + i / waveCount) % 1; // равномерный "поезд"
-      const radius = coreRadius + phase * (maxRadius - coreRadius);
+      for (let i = 0; i < waveCount; i++) {
+        const phase = (t * waveSpeed + i / waveCount) % 1; // 0..1
+        const radius =
+          coreRadius + phase * (maxRadius - coreRadius);
 
-      const fade = 1 - phase; // ближе к центру — ярче
-      if (fade <= 0.03) continue;
+        const fade = 1 - phase;
+        if (fade <= 0.02) continue;
 
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-      ctx.lineWidth = waveLineWidth * (0.9 + 0.1 * fade);
-      ctx.strokeStyle = COLORS.accent;
-      ctx.globalAlpha =
-        (0.12 + 0.55 * fade) * (0.7 + 0.3 * intensity); // чуть ярче при удержании
-      ctx.lineCap = "round";
-      ctx.stroke();
-      ctx.restore();
-    }
-
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.lineWidth = baseLineWidth * (0.9 + 0.1 * fade);
+        const alpha =
+          CONFIG.waves.alphaEdge +
+          (CONFIG.waves.alphaCenter - CONFIG.waves.alphaEdge) *
+            fade;
+        ctx.strokeStyle = COLORS.accent;
+        ctx.globalAlpha =
+          alpha * (0.7 + 0.3 * intensity); // ярче при удержании
+        ctx.lineCap = "round";
+        ctx.stroke();
+        ctx.restore();
+      }
 
       // -------- ПРОГРЕСС УДЕРЖАНИЯ --------
       if (holdProgress > 0.01) {
         const progAngle = holdProgress * Math.PI * 2;
-        const progRadius = coreRadius * 1.8;
+        const progRadius =
+          coreRadius * CONFIG.progress.radiusMultiplier;
 
         ctx.save();
         ctx.beginPath();
@@ -207,7 +243,9 @@ export function SmolDropCanvas() {
           -Math.PI / 2,
           -Math.PI / 2 + progAngle
         );
-        ctx.lineWidth = 3 + 2 * intensity;
+        ctx.lineWidth =
+          CONFIG.progress.lineWidthBase +
+          CONFIG.progress.lineWidthBoost * intensity;
         ctx.strokeStyle = COLORS.accent;
         ctx.globalAlpha = 0.95;
         ctx.lineCap = "round";
@@ -215,7 +253,7 @@ export function SmolDropCanvas() {
         ctx.restore();
       }
 
-      // -------- СОСТОЯНИЯ SUCCESS / ERROR / PENDING --------
+      // -------- СОСТОЯНИЯ --------
       if (state === "success") {
         ctx.save();
         ctx.fillStyle = COLORS.successOverlay;
@@ -234,8 +272,7 @@ export function SmolDropCanvas() {
     }
 
     function loop(now: number) {
-      const t = now / 1000;
-      lastTime = now;
+      const t = now;
 
       if (state === "holding") {
         const elapsed = now - holdStart;
