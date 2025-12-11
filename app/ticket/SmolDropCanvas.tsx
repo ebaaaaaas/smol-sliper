@@ -126,7 +126,7 @@ export function SmolDropCanvas() {
       // -------- ПАРАМЕТРЫ СЕРДЦЕБИЕНИЯ --------
 
       // базовый период удара (сек)
-      const basePeriod = 1.0; // ~60 ударов в минуту
+      const basePeriod = 1.5; // ~60 ударов в минуту
       // при удержании бьётся чаще (до ~70–80)
       const heartbeatPeriod = basePeriod * (1 - 0.35 * intensity);
       const heartbeatPhase = t / heartbeatPeriod;           // растёт постоянно
@@ -142,7 +142,7 @@ export function SmolDropCanvas() {
       const baseCoreRadius = maxRadius * 0.09;
       const coreRadius = baseCoreRadius * (1 + 0.35 * pulse); // "ёкает"
 
-      const baseLineWidth = 2.4 + intensity * 3.2; // общая толщина линий
+      const baseLineWidth = 4 + intensity * 4; // общая толщина линий
 
       ctx.save();
       ctx.beginPath();
@@ -167,9 +167,9 @@ export function SmolDropCanvas() {
 
       // -------- ВОЛНЫ ОТ УДАРОВ --------
       // Каждую волну можно интерпретировать как "возраст" удара
-      const waveCount = 4;          // сколько прошлых ударов одновременно видно
-      const waveLife = 1.3;         // сколько "живёт" волна (в единицах age)
-      const waveLineWidth = baseLineWidth * 0.9;
+      const waveCount = 8;          // сколько прошлых ударов одновременно видно
+      const waveLife = 2.0;         // сколько "живёт" волна (в единицах age)
+      const waveLineWidth = baseLineWidth * 1.1;
 
       for (let i = 0; i < waveCount; i++) {
         // age = сколько ударов назад была эта волна
