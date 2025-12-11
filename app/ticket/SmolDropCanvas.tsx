@@ -165,23 +165,20 @@ export function SmolDropCanvas() {
         ctx.restore();
       }
 
-          // -------- ВОЛНЫ ОТ УДАРОВ --------
-    // делаем много тонких колец между центром и краем
-    const waveCount = 14;          // сколько "колец" одновременно
-    const waveLife = 3.0;          // насколько далеко по радиусу «живёт» волна
-    const waveSpacing = 0.3;       // шаг между волнами по "ударам"
-    const waveLineWidth = baseLineWidth * 1.0; // толстые, но не перебор
+         // -------- ПОСТОЯННЫЕ ВОЛНЫ ОТ ЦЕНТРА --------
+    // волны больше НЕ завязаны на heartbeatPhase — только на времени t
+    const waveCount = 16; // сколько колец одновременно видно
+    const waveSpeedBase = 0.25 + 0.4 * intensity; // скорость движения волн
+
+    const waveLineWidth = baseLineWidth * 1.0; // толщина линий
 
     for (let i = 0; i < waveCount; i++) {
-      // age = сколько "долей удара" назад появилась эта волна
-      const age = heartbeatPhase - i * waveSpacing;
-      if (age < 0 || age > waveLife) continue;
+      // phase: 0..1 — где сейчас волна между центром и краем
+      const phase = (t * waveSpeedBase + i / waveCount) % 1; // равномерный "поезд"
+      const radius = coreRadius + phase * (maxRadius - coreRadius);
 
-      const ageNorm = age / waveLife; // 0..1 от центра к краю
-      const radius = coreRadius + ageNorm * (maxRadius - coreRadius);
-
-      const fade = 1 - ageNorm; // ближе к центру — ярче
-      if (fade <= 0.01) continue;
+      const fade = 1 - phase; // ближе к центру — ярче
+      if (fade <= 0.03) continue;
 
       ctx.save();
       ctx.beginPath();
@@ -189,7 +186,7 @@ export function SmolDropCanvas() {
       ctx.lineWidth = waveLineWidth * (0.9 + 0.1 * fade);
       ctx.strokeStyle = COLORS.accent;
       ctx.globalAlpha =
-        (0.10 + 0.60 * fade) * (0.7 + 0.3 * intensity); // плавное затухание
+        (0.12 + 0.55 * fade) * (0.7 + 0.3 * intensity); // чуть ярче при удержании
       ctx.lineCap = "round";
       ctx.stroke();
       ctx.restore();
