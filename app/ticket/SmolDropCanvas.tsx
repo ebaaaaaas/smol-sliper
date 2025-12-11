@@ -112,7 +112,7 @@ export function SmolDropCanvas() {
     }
 
     // ---------- ВОЛНЫ ОТ ЦЕНТРА ----------
-    function drawScene(t: number) {
+        function drawScene(t: number) {
       // фон
       ctx.fillStyle = COLORS.bg;
       ctx.fillRect(0, 0, width, height);
@@ -123,49 +123,81 @@ export function SmolDropCanvas() {
 
       const maxRadius = Math.min(width, height) * 0.5;
 
-      // параметры волн
-      const coreRadius = maxRadius * 0.08; // центральный круг
-      const baseLineWidth = 2.5 + intensity * 3.5; // толщина линий
-      const waveCount = 4; // сколько волн одновременно
-      const waveSpeed = 0.4 + intensity * 1.2; // скорость "выстрела" волн
+      // -------- ПАРАМЕТРЫ СЕРДЦЕБИЕНИЯ --------
 
-      // статичное центральное кольцо
+      // базовый период удара (сек)
+      const basePeriod = 1.0; // ~60 ударов в минуту
+      // при удержании бьётся чаще (до ~70–80)
+      const heartbeatPeriod = basePeriod * (1 - 0.35 * intensity);
+      const heartbeatPhase = t / heartbeatPeriod;           // растёт постоянно
+      const beatPhase = heartbeatPhase - Math.floor(heartbeatPhase); // 0..1 внутри одного удара
+
+      // плавный "удар": резкий пик и затухание
+      // sin(π * x) даёт 0 → пик → 0 за один цикл
+      const s = Math.sin(Math.PI * beatPhase); // 0..1..0
+      const pulse = Math.max(0, s * s * s);    // подчёркиваем пик
+
+      // -------- ЦЕНТРАЛЬНЫЙ КРУГ (СЕРДЦЕ) --------
+
+      const baseCoreRadius = maxRadius * 0.09;
+      const coreRadius = baseCoreRadius * (1 + 0.35 * pulse); // "ёкает"
+
+      const baseLineWidth = 2.4 + intensity * 3.2; // общая толщина линий
+
       ctx.save();
       ctx.beginPath();
       ctx.arc(cx, cy, coreRadius, 0, Math.PI * 2);
-      ctx.lineWidth = baseLineWidth * 0.8;
+      ctx.lineWidth = baseLineWidth;
       ctx.strokeStyle = COLORS.accent;
-      ctx.globalAlpha = 0.8;
+      ctx.globalAlpha = 0.7 + 0.3 * pulse; // ярче в момент удара
       ctx.lineCap = "round";
       ctx.stroke();
       ctx.restore();
 
-      // расходящиеся волны
-      for (let i = 0; i < waveCount; i++) {
-        // равномерный фазовый сдвиг
-        const phase = (t * waveSpeed + i / waveCount) % 1; // 0..1
-        const radius = coreRadius + phase * (maxRadius - coreRadius);
+      // лёгкий внутренний диск при пике — ощущение "удара"
+      if (pulse > 0.1) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, coreRadius * 0.6, 0, Math.PI * 2);
+        ctx.fillStyle = COLORS.accent;
+        ctx.globalAlpha = 0.15 + 0.35 * pulse;
+        ctx.fill();
+        ctx.restore();
+      }
 
-        // fade по мере удаления
-        const fade = 1 - phase;
-        if (fade <= 0.02) continue;
+      // -------- ВОЛНЫ ОТ УДАРОВ --------
+      // Каждую волну можно интерпретировать как "возраст" удара
+      const waveCount = 4;          // сколько прошлых ударов одновременно видно
+      const waveLife = 1.3;         // сколько "живёт" волна (в единицах age)
+      const waveLineWidth = baseLineWidth * 0.9;
+
+      for (let i = 0; i < waveCount; i++) {
+        // age = сколько ударов назад была эта волна
+        const age = heartbeatPhase - i; // напр. 0.0 — только что, 1.0 — один удар назад
+        if (age < 0 || age > waveLife) continue;
+
+        const ageNorm = age / waveLife; // 0..1
+        const radius = coreRadius + ageNorm * (maxRadius - coreRadius);
+
+        // затухание
+        const fade = 1 - ageNorm; // ближе к центру — ярче
 
         ctx.save();
         ctx.beginPath();
         ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-
-        ctx.lineWidth = baseLineWidth * (0.9 + 0.2 * fade);
+        ctx.lineWidth = waveLineWidth * (0.8 + 0.2 * fade);
         ctx.strokeStyle = COLORS.accent;
-        ctx.globalAlpha = 0.15 + 0.85 * fade * (0.6 + 0.4 * intensity);
+        ctx.globalAlpha =
+          (0.12 + 0.55 * fade) * (0.7 + 0.3 * intensity); // чуть ярче при удержании
         ctx.lineCap = "round";
         ctx.stroke();
         ctx.restore();
       }
 
-      // прогресс удержания — кольцо вокруг центра
+      // -------- ПРОГРЕСС УДЕРЖАНИЯ --------
       if (holdProgress > 0.01) {
         const progAngle = holdProgress * Math.PI * 2;
-        const progRadius = coreRadius * 1.6;
+        const progRadius = coreRadius * 1.8;
 
         ctx.save();
         ctx.beginPath();
@@ -184,7 +216,7 @@ export function SmolDropCanvas() {
         ctx.restore();
       }
 
-      // состояния поверх
+      // -------- СОСТОЯНИЯ SUCCESS / ERROR / PENDING --------
       if (state === "success") {
         ctx.save();
         ctx.fillStyle = COLORS.successOverlay;
