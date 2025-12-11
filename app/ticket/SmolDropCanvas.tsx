@@ -165,34 +165,36 @@ export function SmolDropCanvas() {
         ctx.restore();
       }
 
-      // -------- ВОЛНЫ ОТ УДАРОВ --------
-      // Каждую волну можно интерпретировать как "возраст" удара
-      const waveCount = 8;          // сколько прошлых ударов одновременно видно
-      const waveLife = 2.0;         // сколько "живёт" волна (в единицах age)
-      const waveLineWidth = baseLineWidth * 1.1;
+          // -------- ВОЛНЫ ОТ УДАРОВ --------
+    // делаем много тонких колец между центром и краем
+    const waveCount = 14;          // сколько "колец" одновременно
+    const waveLife = 3.0;          // насколько далеко по радиусу «живёт» волна
+    const waveSpacing = 0.3;       // шаг между волнами по "ударам"
+    const waveLineWidth = baseLineWidth * 1.0; // толстые, но не перебор
 
-      for (let i = 0; i < waveCount; i++) {
-        // age = сколько ударов назад была эта волна
-        const age = heartbeatPhase - i; // напр. 0.0 — только что, 1.0 — один удар назад
-        if (age < 0 || age > waveLife) continue;
+    for (let i = 0; i < waveCount; i++) {
+      // age = сколько "долей удара" назад появилась эта волна
+      const age = heartbeatPhase - i * waveSpacing;
+      if (age < 0 || age > waveLife) continue;
 
-        const ageNorm = age / waveLife; // 0..1
-        const radius = coreRadius + ageNorm * (maxRadius - coreRadius);
+      const ageNorm = age / waveLife; // 0..1 от центра к краю
+      const radius = coreRadius + ageNorm * (maxRadius - coreRadius);
 
-        // затухание
-        const fade = 1 - ageNorm; // ближе к центру — ярче
+      const fade = 1 - ageNorm; // ближе к центру — ярче
+      if (fade <= 0.01) continue;
 
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-        ctx.lineWidth = waveLineWidth * (0.8 + 0.2 * fade);
-        ctx.strokeStyle = COLORS.accent;
-        ctx.globalAlpha =
-          (0.12 + 0.55 * fade) * (0.7 + 0.3 * intensity); // чуть ярче при удержании
-        ctx.lineCap = "round";
-        ctx.stroke();
-        ctx.restore();
-      }
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.lineWidth = waveLineWidth * (0.9 + 0.1 * fade);
+      ctx.strokeStyle = COLORS.accent;
+      ctx.globalAlpha =
+        (0.10 + 0.60 * fade) * (0.7 + 0.3 * intensity); // плавное затухание
+      ctx.lineCap = "round";
+      ctx.stroke();
+      ctx.restore();
+    }
+
 
       // -------- ПРОГРЕСС УДЕРЖАНИЯ --------
       if (holdProgress > 0.01) {
