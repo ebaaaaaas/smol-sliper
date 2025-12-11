@@ -111,100 +111,96 @@ export function SmolDropCanvas() {
       ctx.restore();
     }
 
-    // -------- РАДАР-ВИЗУАЛ --------
-            function drawScene(t: number) {
-  ctx.fillStyle = COLORS.bg;
-  ctx.fillRect(0, 0, width, height);
+    // ---------- ВОЛНЫ ОТ ЦЕНТРА ----------
+    function drawScene(t: number) {
+      // фон
+      ctx.fillStyle = COLORS.bg;
+      ctx.fillRect(0, 0, width, height);
 
-  // Центр строго по середине экрана
-  const cx = width / 2;
-  const cy = height / 2;
+      // центр экрана
+      const cx = width / 2;
+      const cy = height / 2;
 
-  // Максимальный радиус так, чтобы сектор не обрезался
-  const maxRadius = Math.min(width, height) * 0.55;
+      const maxRadius = Math.min(width, height) * 0.5;
 
-  // Параметры от интенсивности (удержание)
-  const baseThickness = 2 + intensity * 3;
-  const baseSpeed = 0.35 + intensity * 1.1;
+      // параметры волн
+      const coreRadius = maxRadius * 0.08; // центральный круг
+      const baseLineWidth = 2.5 + intensity * 3.5; // толщина линий
+      const waveCount = 4; // сколько волн одновременно
+      const waveSpeed = 0.4 + intensity * 1.2; // скорость "выстрела" волн
 
-  const bands = 9;                 // количество полос
-  const angleSpan = Math.PI * 0.5; // ~90°, сектор как у радара
+      // статичное центральное кольцо
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, coreRadius, 0, Math.PI * 2);
+      ctx.lineWidth = baseLineWidth * 0.8;
+      ctx.strokeStyle = COLORS.accent;
+      ctx.globalAlpha = 0.8;
+      ctx.lineCap = "round";
+      ctx.stroke();
+      ctx.restore();
 
-  // Толстые красивые полосы как в Apple Watch
-for (let i = 0; i < bands; i++) {
-  const k = i / Math.max(1, bands - 1);
+      // расходящиеся волны
+      for (let i = 0; i < waveCount; i++) {
+        // равномерный фазовый сдвиг
+        const phase = (t * waveSpeed + i / waveCount) % 1; // 0..1
+        const radius = coreRadius + phase * (maxRadius - coreRadius);
 
-  const r = maxRadius * (0.22 + 0.065 * i);
+        // fade по мере удаления
+        const fade = 1 - phase;
+        if (fade <= 0.02) continue;
 
-  // Скорость: внутренние быстрее
-  const speedFactor = 1.6 - 0.7 * k;
-  const phase = t * baseSpeed * speedFactor;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
 
-  const baseDir = 0; // вправо
-  const midAngle = baseDir;
-  const startAngle = midAngle - angleSpan / 2 + phase;
-  const endAngle = midAngle + angleSpan / 2 + phase;
+        ctx.lineWidth = baseLineWidth * (0.9 + 0.2 * fade);
+        ctx.strokeStyle = COLORS.accent;
+        ctx.globalAlpha = 0.15 + 0.85 * fade * (0.6 + 0.4 * intensity);
+        ctx.lineCap = "round";
+        ctx.stroke();
+        ctx.restore();
+      }
 
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, startAngle, endAngle);
+      // прогресс удержания — кольцо вокруг центра
+      if (holdProgress > 0.01) {
+        const progAngle = holdProgress * Math.PI * 2;
+        const progRadius = coreRadius * 1.6;
 
-  // Толстые линии
-  const lineWidth = 8 + intensity * 4; // БАЗА = 8px, при удержании до 12px
-  ctx.lineWidth = lineWidth;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(
+          cx,
+          cy,
+          progRadius,
+          -Math.PI / 2,
+          -Math.PI / 2 + progAngle
+        );
+        ctx.lineWidth = 3 + 2 * intensity;
+        ctx.strokeStyle = COLORS.accent;
+        ctx.globalAlpha = 0.95;
+        ctx.lineCap = "round";
+        ctx.stroke();
+        ctx.restore();
+      }
 
-  ctx.strokeStyle = COLORS.accent;
-
-  // Меньше прозрачности — более плотный вид
-  ctx.globalAlpha = 0.75 - 0.4 * k + 0.2 * intensity;
-
-  ctx.lineCap = "round";
-  ctx.stroke();
-  ctx.restore();
-}
-
-
-  // прогресс удержания — тонкая дуга вокруг центра
-  if (holdProgress > 0.01) {
-    const progAngle = holdProgress * Math.PI * 2;
-    const progRadius = maxRadius * 0.24;
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(
-      cx,
-      cy,
-      progRadius,
-      -Math.PI / 2,
-      -Math.PI / 2 + progAngle
-    );
-    ctx.lineWidth = 3 + 2 * intensity;
-    ctx.strokeStyle = COLORS.accent;
-    ctx.globalAlpha = 0.95;
-    ctx.lineCap = "round";
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // состояния поверх
-  if (state === "success") {
-    ctx.save();
-    ctx.fillStyle = COLORS.successOverlay;
-    ctx.fillRect(0, 0, width, height);
-    ctx.restore();
-    drawLabel("Билет погашён", cx, cy);
-  } else if (state === "error") {
-    ctx.save();
-    ctx.fillStyle = COLORS.errorOverlay;
-    ctx.fillRect(0, 0, width, height);
-    ctx.restore();
-    drawLabel("Ошибка", cx, cy);
-  } else if (state === "pending") {
-    drawLabel("Проверка…", cx, cy);
-  }
-}
-
-
-
+      // состояния поверх
+      if (state === "success") {
+        ctx.save();
+        ctx.fillStyle = COLORS.successOverlay;
+        ctx.fillRect(0, 0, width, height);
+        ctx.restore();
+        drawLabel("Билет погашён", cx, cy);
+      } else if (state === "error") {
+        ctx.save();
+        ctx.fillStyle = COLORS.errorOverlay;
+        ctx.fillRect(0, 0, width, height);
+        ctx.restore();
+        drawLabel("Ошибка", cx, cy);
+      } else if (state === "pending") {
+        drawLabel("Проверка…", cx, cy);
+      }
+    }
 
     function loop(now: number) {
       const t = now / 1000;
