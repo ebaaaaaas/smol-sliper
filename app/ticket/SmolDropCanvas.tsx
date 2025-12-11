@@ -10,32 +10,24 @@ const COLORS = {
   text: "#FFFFFF",
 };
 
-// ====== ВСЕ НАСТРОЙКИ АНИМАЦИИ ТУТ ======
+// ====== НАСТРОЙКИ АНИМАЦИИ (КРУГИ КАК НА GIF) ======
 const CONFIG = {
-  pulse: {
-    enabled: true,          // выключить "сердцебиение" центра → false
-    basePeriod: 1.4,        // чем БОЛЬШЕ — тем медленнее ритм
-    activeFactor: 0.7,      // при удержании период *= activeFactor (0.7 = чуть быстрее)
-    radiusFactor: 0.09,     // размер центрального круга относительно экрана
-    pulseScale: 0.35,       // насколько сильно "раздувается" круг при ударе
-  },
   waves: {
-    count: 18,              // СКОЛЬКО колец одновременно видно
-    maxRadiusFactor: 0.55,  // докуда они доходят (0.55 ~ чуть не до краёв)
-    speedIdle: 0.18,        // скорость в покое (меньше → медленнее)
-    speedActive: 0.45,      // скорость при удержании (больше → быстрее)
-    lineWidthIdle: 4,       // толщина волн в покое
-    lineWidthActive: 7,     // толщина при удержании
-    alphaCenter: 0.7,       // яркость волн ближе к центру
-    alphaEdge: 0.08,        // яркость у края
+    maxRadiusFactor: 0.9,   // докуда доходят кольца (0.9 ~ почти до краёв)
+    spacing: 32,            // расстояние между кольцами в px
+    speedIdle: 20,          // скорость в покое (px/сек)
+    speedActive: 55,        // скорость при удержании
+    lineWidthIdle: 5,       // толщина в покое
+    lineWidthActive: 9,     // толщина при удержании
+    alphaCenter: 0.9,       // яркость ближе к центру
+    alphaEdge: 0.12,        // яркость у края
   },
   progress: {
-    radiusMultiplier: 1.8,  // радиус кольца прогресса относительно coreRadius
+    radiusFactor: 0.16,     // радиус кольца прогресса относительно min(width,height)
     lineWidthBase: 3,
     lineWidthBoost: 2,
   },
 };
-// ====== КОНЕЦ НАСТРОЕК ======
 
 type CanvasState = "idle" | "holding" | "pending" | "success" | "error";
 
@@ -58,13 +50,13 @@ export function SmolDropCanvas() {
     let state: CanvasState = "idle";
     let holdStart = 0;
     let holdProgress = 0;
-    let intensity = 0;        // 0 = idle, 1 = hold
+    let intensity = 0; // 0 = idle, 1 = hold
     let targetIntensity = 0;
-    let lastTime = performance.now();
     let redeemCalled = false;
     let frameId: number | null = null;
     let apiTimeoutId: number | null = null;
 
+    // iOS: вырубаем контекстное меню / выделение
     const preventDefault = (e: Event) => e.preventDefault();
     window.addEventListener("contextmenu", preventDefault);
     document.addEventListener("selectstart", preventDefault);
@@ -86,8 +78,9 @@ export function SmolDropCanvas() {
       redeemCalled = true;
       state = "pending";
 
+      // TODO: реальный API-вызов
       apiTimeoutId = window.setTimeout(() => {
-        const ok = true; // TODO: заменить на реальный результат API
+        const ok = true; // заменить на реальный результат
         state = ok ? "success" : "error";
         targetIntensity = ok ? 0.6 : 0.2;
       }, 400);
@@ -137,7 +130,7 @@ export function SmolDropCanvas() {
     }
 
     function drawScene(now: number) {
-      const t = now / 1000;
+      const t = now / 1000; // секунды
 
       // фон
       ctx.fillStyle = COLORS.bg;
@@ -146,93 +139,54 @@ export function SmolDropCanvas() {
       const cx = width / 2;
       const cy = height / 2;
 
-      const maxRadius =
-        Math.min(width, height) * CONFIG.waves.maxRadiusFactor;
+      const minSide = Math.min(width, height);
+      const maxRadius = minSide * CONFIG.waves.maxRadiusFactor;
 
-      // -------- СЕРДЕЧНЫЙ РИТМ ЦЕНТРА --------
-      let coreRadius = maxRadius * CONFIG.pulse.radiusFactor;
-      let pulse = 0;
-
-      if (CONFIG.pulse.enabled) {
-        const basePeriod = CONFIG.pulse.basePeriod;
-        const heartbeatPeriod =
-          basePeriod *
-          (1 - (1 - CONFIG.pulse.activeFactor) * intensity); // чуть быстрее при hold
-
-        const heartbeatPhase = t / heartbeatPeriod;
-        const beatPhase = heartbeatPhase - Math.floor(heartbeatPhase); // 0..1
-
-        const s = Math.sin(Math.PI * beatPhase);
-        pulse = Math.max(0, s * s * s);
-
-        coreRadius =
-          coreRadius * (1 + CONFIG.pulse.pulseScale * pulse);
-      }
-
-      const baseLineWidth =
+      // толщина колец и скорость в зависимости от удержания
+      const lineWidth =
         CONFIG.waves.lineWidthIdle +
         (CONFIG.waves.lineWidthActive - CONFIG.waves.lineWidthIdle) *
           intensity;
 
-      // центральное кольцо
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(cx, cy, coreRadius, 0, Math.PI * 2);
-      ctx.lineWidth = baseLineWidth;
-      ctx.strokeStyle = COLORS.accent;
-      ctx.globalAlpha = 0.7 + 0.3 * pulse;
-      ctx.lineCap = "round";
-      ctx.stroke();
-      ctx.restore();
-
-      // небольшой заполнитель внутри (опционально)
-      if (pulse > 0.1) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(cx, cy, coreRadius * 0.6, 0, Math.PI * 2);
-        ctx.fillStyle = COLORS.accent;
-        ctx.globalAlpha = 0.12 + 0.25 * pulse;
-        ctx.fill();
-        ctx.restore();
-      }
-
-      // -------- БЕСКОНЕЧНЫЕ ВОЛНЫ ОТ ЦЕНТРА --------
       const waveSpeed =
         CONFIG.waves.speedIdle +
-        (CONFIG.waves.speedActive - CONFIG.waves.speedIdle) *
-          intensity;
+        (CONFIG.waves.speedActive - CONFIG.waves.speedIdle) * intensity;
 
-      const waveCount = CONFIG.waves.count;
+      const spacing = CONFIG.waves.spacing;
 
-      for (let i = 0; i < waveCount; i++) {
-        const phase = (t * waveSpeed + i / waveCount) % 1; // 0..1
-        const radius =
-          coreRadius + phase * (maxRadius - coreRadius);
+      // Сколько колец нужно, чтобы покрыть радиус
+      const ringCount = Math.ceil(maxRadius / spacing) + 2;
 
-        const fade = 1 - phase;
+      // Смещение "поезда" колец
+      const offset = (t * waveSpeed) % spacing;
+
+      // -------- КОЛЬЦА, КАК НА GIF --------
+      for (let i = 0; i < ringCount; i++) {
+        const radius = offset + i * spacing;
+        if (radius <= 0 || radius > maxRadius) continue;
+
+        const fade = 1 - radius / maxRadius; // ближе к центру — ярче
         if (fade <= 0.02) continue;
+
+        const alpha =
+          CONFIG.waves.alphaEdge +
+          (CONFIG.waves.alphaCenter - CONFIG.waves.alphaEdge) * fade;
 
         ctx.save();
         ctx.beginPath();
         ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-        ctx.lineWidth = baseLineWidth * (0.9 + 0.1 * fade);
-        const alpha =
-          CONFIG.waves.alphaEdge +
-          (CONFIG.waves.alphaCenter - CONFIG.waves.alphaEdge) *
-            fade;
+        ctx.lineWidth = lineWidth;
         ctx.strokeStyle = COLORS.accent;
-        ctx.globalAlpha =
-          alpha * (0.7 + 0.3 * intensity); // ярче при удержании
+        ctx.globalAlpha = alpha * (0.7 + 0.3 * intensity);
         ctx.lineCap = "round";
         ctx.stroke();
         ctx.restore();
       }
 
-      // -------- ПРОГРЕСС УДЕРЖАНИЯ --------
+      // -------- КОЛЬЦО ПРОГРЕССА УДЕРЖАНИЯ --------
       if (holdProgress > 0.01) {
         const progAngle = holdProgress * Math.PI * 2;
-        const progRadius =
-          coreRadius * CONFIG.progress.radiusMultiplier;
+        const progRadius = minSide * CONFIG.progress.radiusFactor;
 
         ctx.save();
         ctx.beginPath();
@@ -272,8 +226,6 @@ export function SmolDropCanvas() {
     }
 
     function loop(now: number) {
-      const t = now;
-
       if (state === "holding") {
         const elapsed = now - holdStart;
         holdProgress = Math.min(1, elapsed / HOLD_DURATION);
@@ -284,9 +236,10 @@ export function SmolDropCanvas() {
         holdProgress += (0 - holdProgress) * 0.15;
       }
 
+      // плавная интерполяция интенсивности
       intensity += (targetIntensity - intensity) * 0.08;
 
-      drawScene(t);
+      drawScene(now);
 
       frameId = requestAnimationFrame(loop);
     }
