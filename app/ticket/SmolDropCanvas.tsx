@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 
 const COLORS = {
-  bg: "#"#000B3B",
+  bg: "#000B3B",
   rings: "#B8FB3C",
   errorOverlay: "rgba(255, 60, 60, 0.22)",
   successOverlay: "rgba(184, 251, 60, 0.18)",
