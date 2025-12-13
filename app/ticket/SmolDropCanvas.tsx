@@ -11,29 +11,20 @@ const COLORS = {
 };
 
 const CONFIG = {
-  // расстояние между кольцами (px)
-  spacing: 70,
+  // РАДАР/СОНАР
+  spacing: 70, // px между кольцами
+  speed: 260, // px/сек (строго линейно)
+  lineWidth: 8, // толщина линии
+  alpha: 1.0, // без fade
+  extraRings: 3, // запас колец за диагональ
 
-  // скорость расширения колец (px/сек)
-  speed: 260,
-
-  // толщина линии колец (px)
-  lineWidth: 8,
-
-  // прозрачность колец (константа, без fade)
-  alpha: 1.0,
-
-  // сколько колец рисовать "с запасом"
-  extraRings: 3,
+  // удержание (оставил из твоей логики)
+  holdDurationMs: 800,
 
   progress: {
     radiusFactor: 0.16,
     lineWidthBase: 3,
     lineWidthBoost: 2,
-  },
-
-  auto: {
-    holdDurationMs: 800,
   },
 };
 
@@ -57,30 +48,37 @@ export function SmolDropCanvas() {
     let holdStart = 0;
     let holdProgress = 0;
 
-    let intensity = 0; // для прогресс-кольца
+    let intensity = 0; // 0..1 (для толщины прогресс-кольца)
     let targetIntensity = 0;
 
     let redeemCalled = false;
     let frameId: number | null = null;
     let apiTimeoutId: number | null = null;
 
-    const HOLD_DURATION = CONFIG.auto.holdDurationMs;
-
     const preventDefault = (e: Event) => e.preventDefault();
     window.addEventListener("contextmenu", preventDefault);
     document.addEventListener("selectstart", preventDefault);
 
+    const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+    const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
+
     function resize() {
+      // TS-safe: проверяем реф каждый раз (на случай размонтирования)
+      const c = canvasRef.current;
+      if (!c) return;
+
       dpr = window.devicePixelRatio || 1;
       width = window.innerWidth;
       height = window.innerHeight;
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
+
+      c.width = Math.floor(width * dpr);
+      c.height = Math.floor(height * dpr);
+
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
-    resize();
     window.addEventListener("resize", resize);
+    resize();
 
     function drawLabel(text: string, cx: number, cy: number) {
       ctx.save();
@@ -99,8 +97,9 @@ export function SmolDropCanvas() {
       redeemCalled = true;
       state = "pending";
 
+      // TODO: реальный API-вызов
       apiTimeoutId = window.setTimeout(() => {
-        const ok = true;
+        const ok = true; // заменить на реальный результат
         state = ok ? "success" : "error";
         targetIntensity = ok ? 0.6 : 0.2;
       }, 400);
@@ -137,8 +136,6 @@ export function SmolDropCanvas() {
     canvas.addEventListener("pointercancel", handlePointerUp);
     canvas.addEventListener("pointerleave", handlePointerUp);
 
-    const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
-
     function drawScene(now: number) {
       const t = now / 1000;
 
@@ -149,17 +146,17 @@ export function SmolDropCanvas() {
       const cx = width / 2;
       const cy = height / 2;
 
-      // максимальный радиус до угла (чтобы кольца уходили за диагональ)
+      // диагональный радиус до угла, чтобы кольца исчезали за границей кадра
       const maxR = Math.hypot(cx, cy);
 
       const s = CONFIG.spacing;
       const v = CONFIG.speed;
       const w = CONFIG.lineWidth;
 
-      // базовый сдвиг — линейный, без easing
+      // линейная фаза, бесшовный луп
       const base = (v * t) % s;
 
-      // сколько колец надо, чтобы заполнить до maxR
+      // количество колец, чтобы закрыть весь кадр + запас
       const ringCount = Math.ceil(maxR / s) + CONFIG.extraRings;
 
       ctx.save();
@@ -176,9 +173,10 @@ export function SmolDropCanvas() {
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
         ctx.stroke();
       }
+
       ctx.restore();
 
-      // прогресс удержания (оставил как в твоём коде)
+      // прогресс удержания
       if (holdProgress > 0.01) {
         const progAngle = holdProgress * Math.PI * 2;
         const minSide = Math.min(width, height);
@@ -218,9 +216,10 @@ export function SmolDropCanvas() {
     function loop(now: number) {
       if (state === "holding") {
         const elapsed = now - holdStart;
-        holdProgress = Math.min(1, elapsed / HOLD_DURATION);
-        if (holdProgress === 1 && !redeemCalled) onRedeem();
+        holdProgress = clamp01(elapsed / CONFIG.holdDurationMs);
+        if (holdProgress >= 1 && !redeemCalled) onRedeem();
       } else {
+        // мягко гасим прогресс-кольцо
         holdProgress += (0 - holdProgress) * 0.15;
       }
 
@@ -235,11 +234,14 @@ export function SmolDropCanvas() {
     return () => {
       if (frameId !== null) cancelAnimationFrame(frameId);
       if (apiTimeoutId !== null) window.clearTimeout(apiTimeoutId);
+
       window.removeEventListener("resize", resize);
+
       canvas.removeEventListener("pointerdown", handlePointerDown);
       canvas.removeEventListener("pointerup", handlePointerUp);
       canvas.removeEventListener("pointercancel", handlePointerUp);
       canvas.removeEventListener("pointerleave", handlePointerUp);
+
       window.removeEventListener("contextmenu", preventDefault);
       document.removeEventListener("selectstart", preventDefault);
     };
