@@ -11,14 +11,12 @@ const COLORS = {
 };
 
 const CONFIG = {
-  // РАДАР/СОНАР
   spacing: 70, // px между кольцами
   speed: 260, // px/сек (строго линейно)
   lineWidth: 8, // толщина линии
   alpha: 1.0, // без fade
-  extraRings: 3, // запас колец за диагональ
+  extraRings: 3, // запас колец
 
-  // удержание (оставил из твоей логики)
   holdDurationMs: 800,
 
   progress: {
@@ -30,6 +28,16 @@ const CONFIG = {
 
 type CanvasState = "idle" | "holding" | "pending" | "success" | "error";
 
+function get2DContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    // Это реально может случиться в старых/ограниченных средах.
+    // В проде лучше фейлиться явно, чем получать поломанный рендер.
+    throw new Error("2D canvas context is not available");
+  }
+  return ctx;
+}
+
 export function SmolDropCanvas() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -37,8 +45,8 @@ export function SmolDropCanvas() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    // ctx теперь СТРОГО CanvasRenderingContext2D (не nullable)
+    const ctx = get2DContext(canvas);
 
     let width = 0;
     let height = 0;
@@ -48,7 +56,7 @@ export function SmolDropCanvas() {
     let holdStart = 0;
     let holdProgress = 0;
 
-    let intensity = 0; // 0..1 (для толщины прогресс-кольца)
+    let intensity = 0;
     let targetIntensity = 0;
 
     let redeemCalled = false;
@@ -63,7 +71,6 @@ export function SmolDropCanvas() {
     const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 
     function resize() {
-      // TS-safe: проверяем реф каждый раз (на случай размонтирования)
       const c = canvasRef.current;
       if (!c) return;
 
@@ -74,6 +81,7 @@ export function SmolDropCanvas() {
       c.width = Math.floor(width * dpr);
       c.height = Math.floor(height * dpr);
 
+      // ctx точно не null
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
@@ -97,9 +105,8 @@ export function SmolDropCanvas() {
       redeemCalled = true;
       state = "pending";
 
-      // TODO: реальный API-вызов
       apiTimeoutId = window.setTimeout(() => {
-        const ok = true; // заменить на реальный результат
+        const ok = true;
         state = ok ? "success" : "error";
         targetIntensity = ok ? 0.6 : 0.2;
       }, 400);
@@ -146,17 +153,16 @@ export function SmolDropCanvas() {
       const cx = width / 2;
       const cy = height / 2;
 
-      // диагональный радиус до угла, чтобы кольца исчезали за границей кадра
+      // диагональный радиус (до угла)
       const maxR = Math.hypot(cx, cy);
 
       const s = CONFIG.spacing;
       const v = CONFIG.speed;
       const w = CONFIG.lineWidth;
 
-      // линейная фаза, бесшовный луп
+      // линейная фаза (бесшовный луп)
       const base = (v * t) % s;
 
-      // количество колец, чтобы закрыть весь кадр + запас
       const ringCount = Math.ceil(maxR / s) + CONFIG.extraRings;
 
       ctx.save();
@@ -173,7 +179,6 @@ export function SmolDropCanvas() {
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
         ctx.stroke();
       }
-
       ctx.restore();
 
       // прогресс удержания
@@ -219,7 +224,6 @@ export function SmolDropCanvas() {
         holdProgress = clamp01(elapsed / CONFIG.holdDurationMs);
         if (holdProgress >= 1 && !redeemCalled) onRedeem();
       } else {
-        // мягко гасим прогресс-кольцо
         holdProgress += (0 - holdProgress) * 0.15;
       }
 
