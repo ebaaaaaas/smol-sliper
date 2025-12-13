@@ -13,7 +13,7 @@ const COLORS = {
 // ====== НАСТРОЙКИ (ПРУЖИНА -> УДАР -> ВОЛНА + ДЕФОРМАЦИЯ КОЛЕЦ) ======
 const CONFIG = {
   rings: {
-    maxRadiusFactor: 0.95,
+    maxRadiusFactor: 1.95,
     spacing: 20,
     // базовая видимость колец
     alphaCenter: 0.22,
