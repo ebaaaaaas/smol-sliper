@@ -10,51 +10,51 @@ const COLORS = {
   text: "#FFFFFF",
 };
 
-// ====== НАСТРОЙКИ (ПРУЖИНА -> УДАР -> ВОЛНА + ДЕФОРМАЦИЯ КОЛЕЦ) ======
+type CanvasState = "idle" | "holding" | "pending" | "success" | "error";
+
+// ====== НАСТРОЙКИ ЭФФЕКТА (одна волна) ======
 const CONFIG = {
   rings: {
     maxRadiusFactor: 0.95,
     spacing: 20,
-    // базовая видимость колец
+    lineWidth: 6,
     alphaCenter: 0.22,
     alphaEdge: 0.06,
-    // толщина фоновых колец (как на GIF — одинаковая)
-    baseLineWidth: 6,
   },
 
   auto: {
-    cycleSec: 2.0,       // период удара (меньше = чаще)
-    pullPortion: 0.32,   // доля цикла на натяжение
-    pausePortion: 0.06,  // микро пауза перед ударом
+    cycleSec: 2.2,        // общий цикл: натяжение -> удар -> затухание (меньше = чаще)
+    pullPortion: 0.34,    // доля цикла на "натяжение" (0..1)
+    pausePortion: 0.06,   // микро-пауза перед ударом
   },
 
   spring: {
     coreRadius: 14,
-    pullMaxIdle: 30,
-    pullMaxActive: 44,
-    pullEase: 2.6,       // резкость натяжения (больше = резче)
+    pullMaxIdle: 28,      // насколько раздувается в idle
+    pullMaxActive: 40,    // при удержании
+    pullEase: 2.8,        // резкость натяжения (больше = резче)
   },
 
-  // ДЕФОРМАЦИЯ КОЛЕЦ ОТ НАТЯЖЕНИЯ ЦЕНТРА
-  pullField: {
-    width: 120,          // насколько далеко от центра затрагивает кольца (px)
-    strength: 0.55,      // сила раздвижки колец при натяжении (0..1)
-  },
-
-  // ДЕФОРМАЦИЯ КОЛЕЦ ОТ УДАРНОЙ ВОЛНЫ
   shock: {
-    speedIdle: 520,
-    speedActive: 720,
-    width: 52,           // ширина зоны сжатия вокруг фронта (px)
-    ampIdle: 16,         // сила сжатия расстояния между кольцами (px)
-    ampActive: 28,
-    fade: 1.10,          // затухание по времени (меньше = дольше живёт)
-    // “хвост” волны — сколько фронтов рисуем
-    trailCount: 3,
+    // скорость волны (px/сек)
+    speedIdle: 240,       // медленнее
+    speedActive: 320,     // чуть быстрее при удержании
+
+    // “ширина” влияния на кольца (чем больше — тем мягче и меньше “двойников”)
+    width: 90,
+
+    // насколько сильно сжимаются кольца возле фронта (px)
+    compressIdle: 10,
+    compressActive: 16,
+
+    // затухание волны по времени (меньше = дольше живёт)
+    fade: 0.85,
+
+    // визуал фронта
     lineWidthIdle: 10,
     lineWidthActive: 12,
-    alphaPeakIdle: 0.7,
-    alphaPeakActive: 0.9,
+    alphaPeakIdle: 0.72,
+    alphaPeakActive: 0.90,
   },
 
   progress: {
@@ -64,8 +64,6 @@ const CONFIG = {
   },
 };
 
-type CanvasState = "idle" | "holding" | "pending" | "success" | "error";
-
 export function SmolDropCanvas() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -73,7 +71,7 @@ export function SmolDropCanvas() {
     if (!canvasRef.current) return;
 
     const canvas = canvasRef.current as HTMLCanvasElement;
-    const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     let width = 0;
@@ -102,8 +100,8 @@ export function SmolDropCanvas() {
       dpr = window.devicePixelRatio || 1;
       width = window.innerWidth;
       height = window.innerHeight;
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
@@ -154,6 +152,9 @@ export function SmolDropCanvas() {
     canvas.addEventListener("pointercancel", handlePointerUp);
     canvas.addEventListener("pointerleave", handlePointerUp);
 
+    const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+    const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
+
     function drawLabel(text: string, cx: number, cy: number) {
       ctx.save();
       ctx.font =
@@ -165,9 +166,6 @@ export function SmolDropCanvas() {
       ctx.fillText(text, cx, cy);
       ctx.restore();
     }
-
-    const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
-    const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 
     function drawScene(now: number) {
       const t = now / 1000;
@@ -181,85 +179,73 @@ export function SmolDropCanvas() {
 
       const minSide = Math.min(width, height);
       const maxRadius = minSide * CONFIG.rings.maxRadiusFactor;
-      const spacing = CONFIG.rings.spacing;
 
-      // ====== АВТО-ЦИКЛ ======
+      // ====== автоцикл ======
       const cycle = CONFIG.auto.cycleSec;
       const p = (t % cycle) / cycle; // 0..1
       const pullPortion = CONFIG.auto.pullPortion;
       const impactPhase = pullPortion + CONFIG.auto.pausePortion;
 
-      // ====== НАТЯЖЕНИЕ (0..1) ======
+      // ====== натяжение (0..1) ======
       let pull = 0;
       if (p < pullPortion) {
         const u = clamp01(p / pullPortion);
         pull = Math.pow(u, CONFIG.spring.pullEase);
       }
 
-      // центральный радиус
       const pullMax = lerp(CONFIG.spring.pullMaxIdle, CONFIG.spring.pullMaxActive, intensity);
       const coreRadius = CONFIG.spring.coreRadius + pullMax * pull;
 
-      // ====== ПАРАМЕТРЫ УДАРА (после impactPhase) ======
+      // ====== волна после удара ======
       let shockFront = -1;
-      let shockAlphaBase = 0;
+      let shockAlpha = 0;
 
       const shockSpeed = lerp(CONFIG.shock.speedIdle, CONFIG.shock.speedActive, intensity);
-      const shockAmp = lerp(CONFIG.shock.ampIdle, CONFIG.shock.ampActive, intensity);
+      const compress = lerp(CONFIG.shock.compressIdle, CONFIG.shock.compressActive, intensity);
       const shockLineWidth = lerp(CONFIG.shock.lineWidthIdle, CONFIG.shock.lineWidthActive, intensity);
       const shockAlphaPeak = lerp(CONFIG.shock.alphaPeakIdle, CONFIG.shock.alphaPeakActive, intensity);
 
       if (p >= impactPhase) {
         const post = clamp01((p - impactPhase) / (1 - impactPhase)); // 0..1
         const elapsed = post * (cycle * (1 - impactPhase)); // сек после удара
+
         shockFront = coreRadius + elapsed * shockSpeed;
-        shockAlphaBase = shockAlphaPeak * Math.exp(-CONFIG.shock.fade * elapsed);
+        shockAlpha = shockAlphaPeak * Math.exp(-CONFIG.shock.fade * elapsed);
       }
 
-      // ====== ФУНКЦИЯ ДЕФОРМАЦИИ КОЛЕЦ ======
-      // 1) Pull-field: когда центр расширяется — ближайшие кольца уезжают наружу.
-      // 2) Shock-field: после удара — кольца СХОДЯТСЯ к фронту (сжатие расстояния), потом возвращаются.
-      const pullFieldWidth = CONFIG.pullField.width;
-      const pullFieldStrength = CONFIG.pullField.strength;
+      // ====== деформация колец: сжатие возле фронта (ОДНОПОЛЯРНО, без задвоения) ======
+      const sigma = CONFIG.shock.width;
 
       function deformRadius(baseR: number): number {
         let dr = 0;
 
-        // Pull-field (только когда pull>0)
+        // pull: когда центр раздувается, ближние кольца чуть раздвигаются
         if (pull > 0.001) {
           const d = baseR - coreRadius;
-          const env = Math.exp(-(d * d) / (2 * pullFieldWidth * pullFieldWidth));
-          // толкаем наружу пропорционально pull
-          dr += pullMax * pull * env * pullFieldStrength;
+          const env = Math.exp(-(d * d) / (2 * 140 * 140));
+          dr += pullMax * pull * env * 0.35;
         }
 
-        // Shock-field (после удара)
-        if (shockFront > 0 && shockAlphaBase > 0.001) {
-          const dist = baseR - shockFront; // + снаружи, - внутри
-          const sigma = CONFIG.shock.width;
-
+        // shock: рядом с фронтом кольца локально "съезжаются" (сжатие расстояния)
+        if (shockFront > 0 && shockAlpha > 0.001) {
+          const dist = baseR - shockFront;
           const env = Math.exp(-(dist * dist) / (2 * sigma * sigma));
 
-          // КЛЮЧЕВАЯ ШТУКА: сжатие расстояния
-          // кольца по обе стороны фронта "подтягиваются" к фронту:
-          // если dist>0 (внешние) -> dr отрицательное (тянем внутрь),
-          // если dist<0 (внутренние) -> dr положительное (тянем наружу).
-          const pullToFront = -(dist / sigma) * env;
-
-          dr += shockAmp * pullToFront * shockAlphaBase;
+          // ВАЖНО: однополярный сдвиг (чуть внутрь), иначе будет “двойная” линия
+          dr += -compress * env * shockAlpha;
         }
 
         return baseR + dr;
       }
 
-      // ====== 0) КОЛЬЦА (НО УЖЕ ДЕФОРМИРОВАННЫЕ) ======
+      // ====== рисуем кольца (уже деформированные) ======
+      const spacing = CONFIG.rings.spacing;
       const ringCount = Math.ceil(maxRadius / spacing) + 4;
 
       for (let i = 1; i < ringCount; i++) {
         const baseR = i * spacing;
         const r = deformRadius(baseR);
-
-        if (r <= coreRadius * 0.6 || r > maxRadius) continue;
+        if (r <= coreRadius * 0.7 || r > maxRadius) continue;
 
         const fade = 1 - r / maxRadius;
         const alpha =
@@ -269,7 +255,7 @@ export function SmolDropCanvas() {
         ctx.save();
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.lineWidth = CONFIG.rings.baseLineWidth;
+        ctx.lineWidth = CONFIG.rings.lineWidth;
         ctx.strokeStyle = COLORS.accent;
         ctx.globalAlpha = alpha;
         ctx.lineCap = "round";
@@ -277,40 +263,35 @@ export function SmolDropCanvas() {
         ctx.restore();
       }
 
-      // ====== 1) ЦЕНТРАЛЬНОЕ КОЛЬЦО (натяжение) ======
+      // ====== центральное кольцо ======
       ctx.save();
       ctx.beginPath();
       ctx.arc(cx, cy, coreRadius, 0, Math.PI * 2);
       ctx.lineWidth = shockLineWidth;
       ctx.strokeStyle = COLORS.accent;
-      ctx.globalAlpha = 0.78 + 0.18 * pull; // чуть ярче на натяжении
+      ctx.globalAlpha = 0.78 + 0.18 * pull;
       ctx.lineCap = "round";
       ctx.stroke();
       ctx.restore();
 
-      // ====== 2-3) ВИДИМЫЙ ФРОНТ УДАРА (поверх) ======
-      // Это не обязательно, но делает "удар" читаемым
-      if (shockFront > 0 && shockAlphaBase > 0.01 && shockFront < maxRadius + CONFIG.shock.width * 2) {
-        for (let k = 0; k < CONFIG.shock.trailCount; k++) {
-          const rr = shockFront - k * CONFIG.shock.width * 0.55;
-          if (rr <= coreRadius) continue;
-
-          const a = shockAlphaBase * (1 - k * 0.35);
-          if (a <= 0.01) continue;
-
-          ctx.save();
-          ctx.beginPath();
-          ctx.arc(cx, cy, rr, 0, Math.PI * 2);
-          ctx.lineWidth = shockLineWidth * (1 - k * 0.10);
-          ctx.strokeStyle = COLORS.accent;
-          ctx.globalAlpha = a;
-          ctx.lineCap = "round";
-          ctx.stroke();
-          ctx.restore();
-        }
+      // ====== ОДНА ЧЁТКАЯ ВОЛНА (одно кольцо фронта) ======
+      if (
+        shockFront > 0 &&
+        shockAlpha > 0.01 &&
+        shockFront < maxRadius + CONFIG.shock.width
+      ) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, shockFront, 0, Math.PI * 2);
+        ctx.lineWidth = shockLineWidth;
+        ctx.strokeStyle = COLORS.accent;
+        ctx.globalAlpha = shockAlpha;
+        ctx.lineCap = "round";
+        ctx.stroke();
+        ctx.restore();
       }
 
-      // ===== ПРОГРЕСС УДЕРЖАНИЯ =====
+      // ====== прогресс удержания ======
       if (holdProgress > 0.01) {
         const progAngle = holdProgress * Math.PI * 2;
         const progRadius = minSide * CONFIG.progress.radiusFactor;
@@ -327,7 +308,7 @@ export function SmolDropCanvas() {
         ctx.restore();
       }
 
-      // ===== СОСТОЯНИЯ =====
+      // ====== состояния ======
       if (state === "success") {
         ctx.save();
         ctx.fillStyle = COLORS.successOverlay;
