@@ -12,7 +12,7 @@ const COLORS = {
 
 const CONFIG = {
   spacing: 70, // px между кольцами
-  speed: 260, // px/сек (строго линейно)
+  speed: 130, // px/сек (строго линейно)
   lineWidth: 8, // толщина линии
   alpha: 1.0, // без fade
   extraRings: 3, // запас колец
