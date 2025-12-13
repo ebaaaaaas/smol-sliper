@@ -10,40 +10,50 @@ const COLORS = {
   text: "#FFFFFF",
 };
 
-type CanvasState = "idle" | "holding" | "pending" | "success" | "error";
-
+// ====== НАСТРОЙКИ (ПРУЖИНА -> УДАР -> ВОЛНА + ДЕФОРМАЦИЯ КОЛЕЦ) ======
 const CONFIG = {
   rings: {
     maxRadiusFactor: 0.95,
     spacing: 20,
-    lineWidth: 6,
+    // базовая видимость колец
     alphaCenter: 0.22,
     alphaEdge: 0.06,
+    // толщина фоновых колец (как на GIF — одинаковая)
+    baseLineWidth: 6,
   },
 
   auto: {
-    cycleSec: 2.2,
-    pullPortion: 0.34,
-    pausePortion: 0.06,
+    cycleSec: 2.0, // период удара (меньше = чаще)
+    pullPortion: 0.32, // доля цикла на натяжение
+    pausePortion: 0.06, // микро пауза перед ударом
   },
 
   spring: {
     coreRadius: 14,
-    pullMaxIdle: 28,
-    pullMaxActive: 40,
-    pullEase: 2.8,
+    pullMaxIdle: 30,
+    pullMaxActive: 44,
+    pullEase: 2.6, // резкость натяжения (больше = резче)
   },
 
+  // ДЕФОРМАЦИЯ КОЛЕЦ ОТ НАТЯЖЕНИЯ ЦЕНТРА
+  pullField: {
+    width: 120, // насколько далеко от центра затрагивает кольца (px)
+    strength: 0.55, // сила раздвижки колец при натяжении (0..1)
+  },
+
+  // ДЕФОРМАЦИЯ КОЛЕЦ ОТ УДАРНОЙ ВОЛНЫ
   shock: {
-    speedIdle: 240,
-    speedActive: 320,
-    width: 90,
-    compressIdle: 10,
-    compressActive: 16,
-    fade: 0.85,
+    speedIdle: 260, // было 520 (медленнее)
+    speedActive: 320, // было 720 (медленнее)
+    width: 80, // было 52 (шире -> одна мягкая волна, без двойной линии)
+    ampIdle: 10, // было 16 (меньше деформация -> меньше "двойника")
+    ampActive: 16, // было 28
+    fade: 0.8, // было 1.10 (дольше живёт)
+    // “хвост” волны — сколько фронтов рисуем
+    trailCount: 1, // было 3 (никаких хвостов)
     lineWidthIdle: 10,
     lineWidthActive: 12,
-    alphaPeakIdle: 0.72,
+    alphaPeakIdle: 0.7,
     alphaPeakActive: 0.9,
   },
 
@@ -54,18 +64,17 @@ const CONFIG = {
   },
 };
 
+type CanvasState = "idle" | "holding" | "pending" | "success" | "error";
+
 export function SmolDropCanvas() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
-    // ✅ фиксируем не-null на старте эффекта
-    const canvasEl = canvasRef.current;
-    if (!canvasEl) return;
+    if (!canvasRef.current) return;
 
-    const rawCtx = canvasEl.getContext("2d");
-    if (!rawCtx) return;
-
-    const ctx = rawCtx as CanvasRenderingContext2D;
+    const canvas = canvasRef.current as HTMLCanvasElement;
+    const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+    if (!ctx) return;
 
     let width = 0;
     let height = 0;
@@ -93,10 +102,8 @@ export function SmolDropCanvas() {
       dpr = window.devicePixelRatio || 1;
       width = window.innerWidth;
       height = window.innerHeight;
-
-      // ✅ используем только canvasEl (не-null)
-      canvasEl.width = Math.floor(width * dpr);
-      canvasEl.height = Math.floor(height * dpr);
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
@@ -142,13 +149,10 @@ export function SmolDropCanvas() {
       endHold();
     };
 
-    canvasEl.addEventListener("pointerdown", handlePointerDown);
-    canvasEl.addEventListener("pointerup", handlePointerUp);
-    canvasEl.addEventListener("pointercancel", handlePointerUp);
-    canvasEl.addEventListener("pointerleave", handlePointerUp);
-
-    const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
-    const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
+    canvas.addEventListener("pointerdown", handlePointerDown);
+    canvas.addEventListener("pointerup", handlePointerUp);
+    canvas.addEventListener("pointercancel", handlePointerUp);
+    canvas.addEventListener("pointerleave", handlePointerUp);
 
     function drawLabel(text: string, cx: number, cy: number) {
       ctx.save();
@@ -162,6 +166,9 @@ export function SmolDropCanvas() {
       ctx.restore();
     }
 
+    const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+    const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
+
     function drawScene(now: number) {
       const t = now / 1000;
 
@@ -174,71 +181,93 @@ export function SmolDropCanvas() {
 
       const minSide = Math.min(width, height);
       const maxRadius = minSide * CONFIG.rings.maxRadiusFactor;
+      const spacing = CONFIG.rings.spacing;
 
-      // автоцикл
+      // ====== АВТО-ЦИКЛ ======
       const cycle = CONFIG.auto.cycleSec;
-      const p = (t % cycle) / cycle;
+      const p = (t % cycle) / cycle; // 0..1
       const pullPortion = CONFIG.auto.pullPortion;
       const impactPhase = pullPortion + CONFIG.auto.pausePortion;
 
-      // натяжение
+      // ====== НАТЯЖЕНИЕ (0..1) ======
       let pull = 0;
       if (p < pullPortion) {
         const u = clamp01(p / pullPortion);
         pull = Math.pow(u, CONFIG.spring.pullEase);
       }
 
-      const pullMax = lerp(CONFIG.spring.pullMaxIdle, CONFIG.spring.pullMaxActive, intensity);
+      // центральный радиус
+      const pullMax = lerp(
+        CONFIG.spring.pullMaxIdle,
+        CONFIG.spring.pullMaxActive,
+        intensity
+      );
       const coreRadius = CONFIG.spring.coreRadius + pullMax * pull;
 
-      // волна после удара (одна)
+      // ====== ПАРАМЕТРЫ УДАРА (после impactPhase) ======
       let shockFront = -1;
-      let shockAlpha = 0;
+      let shockAlphaBase = 0;
 
-      const shockSpeed = lerp(CONFIG.shock.speedIdle, CONFIG.shock.speedActive, intensity);
-      const compress = lerp(CONFIG.shock.compressIdle, CONFIG.shock.compressActive, intensity);
-      const shockLineWidth = lerp(CONFIG.shock.lineWidthIdle, CONFIG.shock.lineWidthActive, intensity);
-      const shockAlphaPeak = lerp(CONFIG.shock.alphaPeakIdle, CONFIG.shock.alphaPeakActive, intensity);
+      const shockSpeed = lerp(
+        CONFIG.shock.speedIdle,
+        CONFIG.shock.speedActive,
+        intensity
+      );
+      const shockAmp = lerp(CONFIG.shock.ampIdle, CONFIG.shock.ampActive, intensity);
+      const shockLineWidth = lerp(
+        CONFIG.shock.lineWidthIdle,
+        CONFIG.shock.lineWidthActive,
+        intensity
+      );
+      const shockAlphaPeak = lerp(
+        CONFIG.shock.alphaPeakIdle,
+        CONFIG.shock.alphaPeakActive,
+        intensity
+      );
 
       if (p >= impactPhase) {
-        const post = clamp01((p - impactPhase) / (1 - impactPhase));
-        const elapsed = post * (cycle * (1 - impactPhase));
-
+        const post = clamp01((p - impactPhase) / (1 - impactPhase)); // 0..1
+        const elapsed = post * (cycle * (1 - impactPhase)); // сек после удара
         shockFront = coreRadius + elapsed * shockSpeed;
-        shockAlpha = shockAlphaPeak * Math.exp(-CONFIG.shock.fade * elapsed);
+        shockAlphaBase = shockAlphaPeak * Math.exp(-CONFIG.shock.fade * elapsed);
       }
 
-      // деформация колец (сжатие возле фронта без задвоения)
-      const sigma = CONFIG.shock.width;
+      // ====== ФУНКЦИЯ ДЕФОРМАЦИИ КОЛЕЦ ======
+      const pullFieldWidth = CONFIG.pullField.width;
+      const pullFieldStrength = CONFIG.pullField.strength;
 
       function deformRadius(baseR: number): number {
         let dr = 0;
 
-        // pull: ближние кольца чуть раздвигаются
+        // Pull-field (только когда pull>0)
         if (pull > 0.001) {
           const d = baseR - coreRadius;
-          const env = Math.exp(-(d * d) / (2 * 140 * 140));
-          dr += pullMax * pull * env * 0.35;
+          const env = Math.exp(-(d * d) / (2 * pullFieldWidth * pullFieldWidth));
+          // толкаем наружу пропорционально pull
+          dr += pullMax * pull * env * pullFieldStrength;
         }
 
-        // shock: локально "съезжаются" (чуть внутрь) вокруг фронта
-        if (shockFront > 0 && shockAlpha > 0.001) {
+        // Shock-field (после удара) — ОДНОПОЛЯРНО (без "двойника")
+        if (shockFront > 0 && shockAlphaBase > 0.001) {
           const dist = baseR - shockFront;
+          const sigma = CONFIG.shock.width;
           const env = Math.exp(-(dist * dist) / (2 * sigma * sigma));
-          dr += -compress * env * shockAlpha;
+
+          // ОДНА деформация: локально сжимаем расстояния (кольца едут чуть внутрь)
+          dr += -shockAmp * env * shockAlphaBase;
         }
 
         return baseR + dr;
       }
 
-      // кольца
-      const spacing = CONFIG.rings.spacing;
+      // ====== 0) КОЛЬЦА (НО УЖЕ ДЕФОРМИРОВАННЫЕ) ======
       const ringCount = Math.ceil(maxRadius / spacing) + 4;
 
       for (let i = 1; i < ringCount; i++) {
         const baseR = i * spacing;
         const r = deformRadius(baseR);
-        if (r <= coreRadius * 0.7 || r > maxRadius) continue;
+
+        if (r <= coreRadius * 0.6 || r > maxRadius) continue;
 
         const fade = 1 - r / maxRadius;
         const alpha =
@@ -248,7 +277,7 @@ export function SmolDropCanvas() {
         ctx.save();
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.lineWidth = CONFIG.rings.lineWidth;
+        ctx.lineWidth = CONFIG.rings.baseLineWidth;
         ctx.strokeStyle = COLORS.accent;
         ctx.globalAlpha = alpha;
         ctx.lineCap = "round";
@@ -256,31 +285,35 @@ export function SmolDropCanvas() {
         ctx.restore();
       }
 
-      // центральное кольцо
+      // ====== 1) ЦЕНТРАЛЬНОЕ КОЛЬЦО (натяжение) ======
       ctx.save();
       ctx.beginPath();
       ctx.arc(cx, cy, coreRadius, 0, Math.PI * 2);
       ctx.lineWidth = shockLineWidth;
       ctx.strokeStyle = COLORS.accent;
-      ctx.globalAlpha = 0.78 + 0.18 * pull;
+      ctx.globalAlpha = 0.78 + 0.18 * pull; // чуть ярче на натяжении
       ctx.lineCap = "round";
       ctx.stroke();
       ctx.restore();
 
-      // одна четкая волна (одно кольцо фронта)
-      if (shockFront > 0 && shockAlpha > 0.01 && shockFront < maxRadius + sigma) {
+      // ====== 2-3) ОДИН ЧЁТКИЙ ФРОНТ (одно кольцо) ======
+      if (
+        shockFront > 0 &&
+        shockAlphaBase > 0.01 &&
+        shockFront < maxRadius + CONFIG.shock.width
+      ) {
         ctx.save();
         ctx.beginPath();
         ctx.arc(cx, cy, shockFront, 0, Math.PI * 2);
         ctx.lineWidth = shockLineWidth;
         ctx.strokeStyle = COLORS.accent;
-        ctx.globalAlpha = shockAlpha;
+        ctx.globalAlpha = shockAlphaBase; // один фронт
         ctx.lineCap = "round";
         ctx.stroke();
         ctx.restore();
       }
 
-      // прогресс удержания
+      // ===== ПРОГРЕСС УДЕРЖАНИЯ =====
       if (holdProgress > 0.01) {
         const progAngle = holdProgress * Math.PI * 2;
         const progRadius = minSide * CONFIG.progress.radiusFactor;
@@ -289,7 +322,8 @@ export function SmolDropCanvas() {
         ctx.beginPath();
         ctx.arc(cx, cy, progRadius, -Math.PI / 2, -Math.PI / 2 + progAngle);
         ctx.lineWidth =
-          CONFIG.progress.lineWidthBase + CONFIG.progress.lineWidthBoost * intensity;
+          CONFIG.progress.lineWidthBase +
+          CONFIG.progress.lineWidthBoost * intensity;
         ctx.strokeStyle = COLORS.accent;
         ctx.globalAlpha = 0.95;
         ctx.lineCap = "round";
@@ -297,7 +331,7 @@ export function SmolDropCanvas() {
         ctx.restore();
       }
 
-      // состояния
+      // ===== СОСТОЯНИЯ =====
       if (state === "success") {
         ctx.save();
         ctx.fillStyle = COLORS.successOverlay;
@@ -319,7 +353,9 @@ export function SmolDropCanvas() {
       if (state === "holding") {
         const elapsed = now - holdStart;
         holdProgress = Math.min(1, elapsed / HOLD_DURATION);
-        if (holdProgress === 1 && !redeemCalled) onRedeem();
+        if (holdProgress === 1 && !redeemCalled) {
+          onRedeem();
+        }
       } else {
         holdProgress += (0 - holdProgress) * 0.15;
       }
@@ -327,6 +363,7 @@ export function SmolDropCanvas() {
       intensity += (targetIntensity - intensity) * 0.08;
 
       drawScene(now);
+
       frameId = requestAnimationFrame(loop);
     }
 
@@ -336,12 +373,10 @@ export function SmolDropCanvas() {
       if (frameId !== null) cancelAnimationFrame(frameId);
       if (apiTimeoutId !== null) window.clearTimeout(apiTimeoutId);
       window.removeEventListener("resize", resize);
-
-      canvasEl.removeEventListener("pointerdown", handlePointerDown);
-      canvasEl.removeEventListener("pointerup", handlePointerUp);
-      canvasEl.removeEventListener("pointercancel", handlePointerUp);
-      canvasEl.removeEventListener("pointerleave", handlePointerUp);
-
+      canvas.removeEventListener("pointerdown", handlePointerDown);
+      canvas.removeEventListener("pointerup", handlePointerUp);
+      canvas.removeEventListener("pointercancel", handlePointerUp);
+      canvas.removeEventListener("pointerleave", handlePointerUp);
       window.removeEventListener("contextmenu", preventDefault);
       document.removeEventListener("selectstart", preventDefault);
     };
