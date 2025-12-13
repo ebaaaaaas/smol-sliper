@@ -10,39 +10,51 @@ const COLORS = {
   text: "#FFFFFF",
 };
 
-// ====== НАСТРОЙКИ АНИМАЦИИ (АВТО-УДАР -> ВОЛНА) ======
+// ====== НАСТРОЙКИ (ПРУЖИНА -> УДАР -> ВОЛНА + ДЕФОРМАЦИЯ КОЛЕЦ) ======
 const CONFIG = {
-  baseRings: {
+  rings: {
     maxRadiusFactor: 0.95,
     spacing: 20,
+    // базовая видимость колец
     alphaCenter: 0.22,
     alphaEdge: 0.06,
+    // толщина фоновых колец (как на GIF — одинаковая)
+    baseLineWidth: 6,
   },
 
   auto: {
-    cycleSec: 2.0,        // полный цикл (натяжение+удар+затухание)
-    pullPortion: 0.32,    // доля цикла на натяжение (0..1)
-    pausePortion: 0.06,   // микро-пауза после удара (0..1)
+    cycleSec: 2.0,       // период удара (меньше = чаще)
+    pullPortion: 0.32,   // доля цикла на натяжение
+    pausePortion: 0.06,  // микро пауза перед ударом
   },
 
   spring: {
     coreRadius: 14,
-    pullMaxIdle: 30,      // насколько раздувается в idle
-    pullMaxActive: 44,    // насколько раздувается при удержании
-    pullEase: 2.6,        // резкость натяжения
-    snapBack: 0.22,
+    pullMaxIdle: 30,
+    pullMaxActive: 44,
+    pullEase: 2.6,       // резкость натяжения (больше = резче)
   },
 
-  impactWave: {
+  // ДЕФОРМАЦИЯ КОЛЕЦ ОТ НАТЯЖЕНИЯ ЦЕНТРА
+  pullField: {
+    width: 120,          // насколько далеко от центра затрагивает кольца (px)
+    strength: 0.55,      // сила раздвижки колец при натяжении (0..1)
+  },
+
+  // ДЕФОРМАЦИЯ КОЛЕЦ ОТ УДАРНОЙ ВОЛНЫ
+  shock: {
     speedIdle: 520,
     speedActive: 720,
-    width: 36,
-    fade: 1.15,           // меньше = дольше живёт волна
+    width: 52,           // ширина зоны сжатия вокруг фронта (px)
+    ampIdle: 16,         // сила сжатия расстояния между кольцами (px)
+    ampActive: 28,
+    fade: 1.10,          // затухание по времени (меньше = дольше живёт)
+    // “хвост” волны — сколько фронтов рисуем
+    trailCount: 3,
     lineWidthIdle: 10,
     lineWidthActive: 12,
     alphaPeakIdle: 0.7,
     alphaPeakActive: 0.9,
-    trailCount: 3,
   },
 
   progress: {
@@ -74,15 +86,12 @@ export function SmolDropCanvas() {
     let holdStart = 0;
     let holdProgress = 0;
 
-    let intensity = 0; // 0..1 (hold)
+    let intensity = 0; // 0..1
     let targetIntensity = 0;
 
     let redeemCalled = false;
     let frameId: number | null = null;
     let apiTimeoutId: number | null = null;
-
-    // чтобы не запускать удар дважды на одном цикле
-    let lastImpactIndex = -1;
 
     // iOS: вырубаем контекстное меню / выделение
     const preventDefault = (e: Event) => e.preventDefault();
@@ -158,10 +167,7 @@ export function SmolDropCanvas() {
     }
 
     const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
-
-    function lerp(a: number, b: number, k: number) {
-      return a + (b - a) * k;
-    }
+    const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 
     function drawScene(now: number) {
       const t = now / 1000;
@@ -174,23 +180,96 @@ export function SmolDropCanvas() {
       const cy = height / 2;
 
       const minSide = Math.min(width, height);
-      const maxRadius = minSide * CONFIG.baseRings.maxRadiusFactor;
+      const maxRadius = minSide * CONFIG.rings.maxRadiusFactor;
+      const spacing = CONFIG.rings.spacing;
 
-      // ====== СТАТИЧНЫЕ КОЛЬЦА-ФОН ======
-      const spacing = CONFIG.baseRings.spacing;
-      const ringCount = Math.ceil(maxRadius / spacing) + 2;
+      // ====== АВТО-ЦИКЛ ======
+      const cycle = CONFIG.auto.cycleSec;
+      const p = (t % cycle) / cycle; // 0..1
+      const pullPortion = CONFIG.auto.pullPortion;
+      const impactPhase = pullPortion + CONFIG.auto.pausePortion;
+
+      // ====== НАТЯЖЕНИЕ (0..1) ======
+      let pull = 0;
+      if (p < pullPortion) {
+        const u = clamp01(p / pullPortion);
+        pull = Math.pow(u, CONFIG.spring.pullEase);
+      }
+
+      // центральный радиус
+      const pullMax = lerp(CONFIG.spring.pullMaxIdle, CONFIG.spring.pullMaxActive, intensity);
+      const coreRadius = CONFIG.spring.coreRadius + pullMax * pull;
+
+      // ====== ПАРАМЕТРЫ УДАРА (после impactPhase) ======
+      let shockFront = -1;
+      let shockAlphaBase = 0;
+
+      const shockSpeed = lerp(CONFIG.shock.speedIdle, CONFIG.shock.speedActive, intensity);
+      const shockAmp = lerp(CONFIG.shock.ampIdle, CONFIG.shock.ampActive, intensity);
+      const shockLineWidth = lerp(CONFIG.shock.lineWidthIdle, CONFIG.shock.lineWidthActive, intensity);
+      const shockAlphaPeak = lerp(CONFIG.shock.alphaPeakIdle, CONFIG.shock.alphaPeakActive, intensity);
+
+      if (p >= impactPhase) {
+        const post = clamp01((p - impactPhase) / (1 - impactPhase)); // 0..1
+        const elapsed = post * (cycle * (1 - impactPhase)); // сек после удара
+        shockFront = coreRadius + elapsed * shockSpeed;
+        shockAlphaBase = shockAlphaPeak * Math.exp(-CONFIG.shock.fade * elapsed);
+      }
+
+      // ====== ФУНКЦИЯ ДЕФОРМАЦИИ КОЛЕЦ ======
+      // 1) Pull-field: когда центр расширяется — ближайшие кольца уезжают наружу.
+      // 2) Shock-field: после удара — кольца СХОДЯТСЯ к фронту (сжатие расстояния), потом возвращаются.
+      const pullFieldWidth = CONFIG.pullField.width;
+      const pullFieldStrength = CONFIG.pullField.strength;
+
+      function deformRadius(baseR: number): number {
+        let dr = 0;
+
+        // Pull-field (только когда pull>0)
+        if (pull > 0.001) {
+          const d = baseR - coreRadius;
+          const env = Math.exp(-(d * d) / (2 * pullFieldWidth * pullFieldWidth));
+          // толкаем наружу пропорционально pull
+          dr += pullMax * pull * env * pullFieldStrength;
+        }
+
+        // Shock-field (после удара)
+        if (shockFront > 0 && shockAlphaBase > 0.001) {
+          const dist = baseR - shockFront; // + снаружи, - внутри
+          const sigma = CONFIG.shock.width;
+
+          const env = Math.exp(-(dist * dist) / (2 * sigma * sigma));
+
+          // КЛЮЧЕВАЯ ШТУКА: сжатие расстояния
+          // кольца по обе стороны фронта "подтягиваются" к фронту:
+          // если dist>0 (внешние) -> dr отрицательное (тянем внутрь),
+          // если dist<0 (внутренние) -> dr положительное (тянем наружу).
+          const pullToFront = -(dist / sigma) * env;
+
+          dr += shockAmp * pullToFront * shockAlphaBase;
+        }
+
+        return baseR + dr;
+      }
+
+      // ====== 0) КОЛЬЦА (НО УЖЕ ДЕФОРМИРОВАННЫЕ) ======
+      const ringCount = Math.ceil(maxRadius / spacing) + 4;
 
       for (let i = 1; i < ringCount; i++) {
-        const r = i * spacing;
+        const baseR = i * spacing;
+        const r = deformRadius(baseR);
+
+        if (r <= coreRadius * 0.6 || r > maxRadius) continue;
+
         const fade = 1 - r / maxRadius;
         const alpha =
-          CONFIG.baseRings.alphaEdge +
-          (CONFIG.baseRings.alphaCenter - CONFIG.baseRings.alphaEdge) * fade;
+          CONFIG.rings.alphaEdge +
+          (CONFIG.rings.alphaCenter - CONFIG.rings.alphaEdge) * fade;
 
         ctx.save();
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.lineWidth = lerp(CONFIG.impactWave.lineWidthIdle, CONFIG.impactWave.lineWidthActive, intensity) * 0.55;
+        ctx.lineWidth = CONFIG.rings.baseLineWidth;
         ctx.strokeStyle = COLORS.accent;
         ctx.globalAlpha = alpha;
         ctx.lineCap = "round";
@@ -198,86 +277,40 @@ export function SmolDropCanvas() {
         ctx.restore();
       }
 
-      // ====== АВТОЦИКЛ (натяжение -> удар -> волна) ======
-      const cycle = CONFIG.auto.cycleSec;
-      const p = (t % cycle) / cycle; // 0..1
-
-      const pullPortion = CONFIG.auto.pullPortion;
-      const pausePortion = CONFIG.auto.pausePortion;
-
-      // как сильно тянем в этом цикле
-      let pull = 0; // 0..1
-      if (p < pullPortion) {
-        const u = clamp01(p / pullPortion);
-        pull = Math.pow(u, CONFIG.spring.pullEase); // резкий рост к концу
-      } else {
-        pull = 0;
-      }
-
-      const pullMax = lerp(CONFIG.spring.pullMaxIdle, CONFIG.spring.pullMaxActive, intensity);
-      const coreRadius = CONFIG.spring.coreRadius + pullMax * pull;
-
-      // ====== центральное кольцо (манит) ======
-      const coreLineWidth = lerp(CONFIG.impactWave.lineWidthIdle, CONFIG.impactWave.lineWidthActive, intensity);
-
+      // ====== 1) ЦЕНТРАЛЬНОЕ КОЛЬЦО (натяжение) ======
       ctx.save();
       ctx.beginPath();
       ctx.arc(cx, cy, coreRadius, 0, Math.PI * 2);
-      ctx.lineWidth = coreLineWidth;
+      ctx.lineWidth = shockLineWidth;
       ctx.strokeStyle = COLORS.accent;
-      // в конце натяжения чуть ярче
-      ctx.globalAlpha = 0.75 + 0.20 * pull;
+      ctx.globalAlpha = 0.78 + 0.18 * pull; // чуть ярче на натяжении
       ctx.lineCap = "round";
       ctx.stroke();
       ctx.restore();
 
-      // ====== МОМЕНТ УДАРА (один раз на цикл) ======
-      // удар происходит сразу после pullPortion + pausePortion (микро-пауза)
-      const impactPhase = pullPortion + pausePortion;
-      const cycleIndex = Math.floor(t / cycle);
+      // ====== 2-3) ВИДИМЫЙ ФРОНТ УДАРА (поверх) ======
+      // Это не обязательно, но делает "удар" читаемым
+      if (shockFront > 0 && shockAlphaBase > 0.01 && shockFront < maxRadius + CONFIG.shock.width * 2) {
+        for (let k = 0; k < CONFIG.shock.trailCount; k++) {
+          const rr = shockFront - k * CONFIG.shock.width * 0.55;
+          if (rr <= coreRadius) continue;
 
-      // Запоминаем, что удар в этом цикле уже "сработал"
-      // (нужно только для синхронизации, чтобы не было дребезга)
-      if (p >= impactPhase && lastImpactIndex !== cycleIndex) {
-        lastImpactIndex = cycleIndex;
-      }
+          const a = shockAlphaBase * (1 - k * 0.35);
+          if (a <= 0.01) continue;
 
-      // ====== ВОЛНА: видна только после удара, и угасает до конца цикла ======
-      if (p >= impactPhase) {
-        const post = clamp01((p - impactPhase) / (1 - impactPhase)); // 0..1
-        const elapsed = post * (cycle * (1 - impactPhase)); // сек с удара
-
-        const waveSpeed = lerp(CONFIG.impactWave.speedIdle, CONFIG.impactWave.speedActive, intensity);
-        const front = coreRadius + elapsed * waveSpeed;
-
-        // затухание по времени, чтобы к концу цикла почти пропала
-        const fadeTime = Math.exp(-CONFIG.impactWave.fade * elapsed);
-
-        const alphaPeak = lerp(CONFIG.impactWave.alphaPeakIdle, CONFIG.impactWave.alphaPeakActive, intensity);
-        const baseAlpha = alphaPeak * fadeTime;
-
-        if (front < maxRadius + CONFIG.impactWave.width * 2 && baseAlpha > 0.01) {
-          for (let k = 0; k < CONFIG.impactWave.trailCount; k++) {
-            const r = front - k * CONFIG.impactWave.width * 0.55;
-            if (r <= coreRadius) continue;
-
-            const a = baseAlpha * (1 - k * 0.35);
-            if (a <= 0.01) continue;
-
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(cx, cy, r, 0, Math.PI * 2);
-            ctx.lineWidth = coreLineWidth * (1 - k * 0.10);
-            ctx.strokeStyle = COLORS.accent;
-            ctx.globalAlpha = a;
-            ctx.lineCap = "round";
-            ctx.stroke();
-            ctx.restore();
-          }
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+          ctx.lineWidth = shockLineWidth * (1 - k * 0.10);
+          ctx.strokeStyle = COLORS.accent;
+          ctx.globalAlpha = a;
+          ctx.lineCap = "round";
+          ctx.stroke();
+          ctx.restore();
         }
       }
 
-      // ===== ПРОГРЕСС УДЕРЖАНИЯ (твой redeem) =====
+      // ===== ПРОГРЕСС УДЕРЖАНИЯ =====
       if (holdProgress > 0.01) {
         const progAngle = holdProgress * Math.PI * 2;
         const progRadius = minSide * CONFIG.progress.radiusFactor;
