@@ -10,27 +10,33 @@ const COLORS = {
   text: "#FFFFFF",
 };
 
-// ====== НАСТРОЙКИ АНИМАЦИИ (КАПЛЯ + ВОЛНА) ======
+// ====== НАСТРОЙКИ АНИМАЦИИ (ПРУЖИНА -> УДАР -> 1 ВОЛНА) ======
 const CONFIG = {
-  waves: {
-    maxRadiusFactor: 0.95,   // докуда доходят кольца (0.95 ~ почти до краёв)
-    spacing: 20,             // базовое расстояние между кольцами (px)
-    speedIdle: 110,          // скорость волны в покое (px/сек)
-    speedActive: 90,        // скорость волны при удержании
-    lineWidthIdle: 10,        // толщина колец в покое
-    lineWidthActive: 10,     // толщина при удержании
-
-    // параметры "ударной волны"
-    pulseAmplitudeIdle: 22,  // деформация колец в покое (px)
-    pulseAmplitudeActive: 42,// деформация при удержании (px)
-    pulseWidth: 120,         // ширина области деформации вдоль радиуса (чем больше — мягче)
-    distortionFrequency: 2.6,// внутренняя частота колебаний внутри волны
-
-    alphaCenter: 0.9,        // яркость ближе к центру
-    alphaEdge: 0.12,         // яркость у края
+  baseRings: {
+    maxRadiusFactor: 0.95,
+    spacing: 20,           // расстояние между статичными кольцами
+    alphaCenter: 0.28,     // статичные кольца почти невидимые
+    alphaEdge: 0.06,
   },
+
+  spring: {
+    coreRadius: 14,        // базовый радиус центрального кольца (px)
+    pullMax: 34,           // насколько сильно "раздувается" при натяжении (px)
+    pullEase: 2.4,         // крутизна натяжения (больше = резче)
+    snapBack: 0.22,        // скорость возврата к базовому радиусу (0..1)
+  },
+
+  impactWave: {
+    speed: 520,            // px/сек — скорость фронта волны
+    width: 36,             // ширина фронта (размазанность)
+    amplitude: 1.0,        // общая сила (множитель альфы)
+    fade: 1.25,            // затухание по времени (больше = быстрее гаснет)
+    lineWidth: 10,         // толщина колец
+    alphaPeak: 0.75,       // яркость фронта на старте
+  },
+
   progress: {
-    radiusFactor: 0.16,      // радиус кольца прогресса относительно min(width,height)
+    radiusFactor: 0.16,
     lineWidthBase: 3,
     lineWidthBoost: 2,
   },
@@ -57,11 +63,20 @@ export function SmolDropCanvas() {
     let state: CanvasState = "idle";
     let holdStart = 0;
     let holdProgress = 0;
-    let intensity = 0; // 0 = idle, 1 = hold
+
+    let intensity = 0; // 0..1 (hold)
     let targetIntensity = 0;
+
     let redeemCalled = false;
     let frameId: number | null = null;
     let apiTimeoutId: number | null = null;
+
+    // ===== ПРУЖИННЫЙ ИМПАКТ =====
+    // coreScale: текущий "натянутый" радиус (в px добавка)
+    let pullAmount = 0; // 0..pullMax
+    // ударная волна: время старта (сек), активна/нет
+    let impactStartSec = -999;
+    let impactActive = false;
 
     // iOS: вырубаем контекстное меню / выделение
     const preventDefault = (e: Event) => e.preventDefault();
@@ -102,10 +117,14 @@ export function SmolDropCanvas() {
       redeemCalled = false;
     }
 
-    function endHold() {
+    function endHold(nowSec: number) {
       if (state === "holding") {
         state = "idle";
         targetIntensity = 0;
+
+        // === ВАЖНО: "УДАР" ЗАПУСКАЕМ НА ОТПУСКАНИИ ===
+        impactStartSec = nowSec;
+        impactActive = true;
       }
     }
 
@@ -116,7 +135,7 @@ export function SmolDropCanvas() {
 
     const handlePointerUp = (e: PointerEvent) => {
       e.preventDefault();
-      endHold();
+      endHold(performance.now() / 1000);
     };
 
     canvas.addEventListener("pointerdown", handlePointerDown);
@@ -136,8 +155,10 @@ export function SmolDropCanvas() {
       ctx.restore();
     }
 
+    const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+
     function drawScene(now: number) {
-      const t = now / 1000; // секунды
+      const t = now / 1000;
 
       // фон
       ctx.fillStyle = COLORS.bg;
@@ -147,91 +168,100 @@ export function SmolDropCanvas() {
       const cy = height / 2;
 
       const minSide = Math.min(width, height);
-      const maxRadius = minSide * CONFIG.waves.maxRadiusFactor;
+      const maxRadius = minSide * CONFIG.baseRings.maxRadiusFactor;
 
-      const spacing = CONFIG.waves.spacing;
+      // ===== 0) СТАТИЧНЫЕ КОЛЬЦА КАК НА GIF =====
+      const spacing = CONFIG.baseRings.spacing;
+      const ringCount = Math.ceil(maxRadius / spacing) + 2;
 
-      // базовый статический центральный круг (как точка удара)
-      const coreRadius = spacing * 0.7;
-
-      // толщина колец и параметры волны от интенсивности
-      const lineWidth =
-        CONFIG.waves.lineWidthIdle +
-        (CONFIG.waves.lineWidthActive - CONFIG.waves.lineWidthIdle) *
-          intensity;
-
-      const waveSpeed =
-        CONFIG.waves.speedIdle +
-        (CONFIG.waves.speedActive - CONFIG.waves.speedIdle) * intensity;
-
-      const pulseAmplitude =
-        CONFIG.waves.pulseAmplitudeIdle +
-        (CONFIG.waves.pulseAmplitudeActive -
-          CONFIG.waves.pulseAmplitudeIdle) *
-          intensity;
-
-      const sigma = CONFIG.waves.pulseWidth;
-      const omega = CONFIG.waves.distortionFrequency * 2 * Math.PI;
-
-      // рисуем статичное центральное кольцо
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(cx, cy, coreRadius, 0, Math.PI * 2);
-      ctx.lineWidth = lineWidth;
-      ctx.strokeStyle = COLORS.accent;
-      ctx.globalAlpha = 0.9;
-      ctx.lineCap = "round";
-      ctx.stroke();
-      ctx.restore();
-
-      // положение фронта волны (как капля, бегущая наружу)
-      const front =
-        (t * waveSpeed) % (maxRadius + spacing + sigma * 2);
-
-      // сколько колец нужно
-      const ringCount = Math.ceil(maxRadius / spacing) + 6;
-
-      // -------- ОСНОВНЫЕ КОЛЬЦА С ДЕФОРМАЦИЕЙ --------
-      for (let i = 0; i < ringCount; i++) {
-        const baseR = coreRadius + i * spacing;
-        if (baseR <= 0 || baseR > maxRadius + sigma) continue;
-
-        // расстояние кольца от фронта волны
-        const dist = baseR - front;
-
-        // гауссово затухание деформации вокруг фронта
-        const gauss = Math.exp(
-          -((dist * dist) / (2 * sigma * sigma))
-        );
-
-        // локальное колебание (сжатие/расширение)
-        const oscillation = Math.sin(dist / sigma - t * omega);
-
-        const offset = pulseAmplitude * gauss * oscillation;
-
-        const radius = baseR + offset;
-        if (radius <= coreRadius || radius > maxRadius) continue;
-
-        const fade = 1 - radius / maxRadius;
-        if (fade <= 0.02) continue;
+      for (let i = 1; i < ringCount; i++) {
+        const r = i * spacing;
+        const fade = 1 - r / maxRadius;
 
         const alpha =
-          CONFIG.waves.alphaEdge +
-          (CONFIG.waves.alphaCenter - CONFIG.waves.alphaEdge) *
-            fade;
+          CONFIG.baseRings.alphaEdge +
+          (CONFIG.baseRings.alphaCenter - CONFIG.baseRings.alphaEdge) * fade;
 
         ctx.save();
         ctx.beginPath();
-        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-        ctx.lineWidth = lineWidth;
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.lineWidth = CONFIG.impactWave.lineWidth * 0.55;
         ctx.strokeStyle = COLORS.accent;
-        ctx.globalAlpha = alpha * (0.8 + 0.2 * intensity);
+        ctx.globalAlpha = alpha;
         ctx.lineCap = "round";
         ctx.stroke();
         ctx.restore();
       }
 
-      // -------- КОЛЬЦО ПРОГРЕССА УДЕРЖАНИЯ --------
+      // ===== 1) НАТЯЖЕНИЕ ЦЕНТРА (holding) =====
+      // Натяжение: по мере удержания растет pullAmount, но нелинейно (резко)
+      const pullMax = CONFIG.spring.pullMax;
+
+      if (state === "holding") {
+        const u = clamp01(holdProgress);
+        const eased = Math.pow(u, CONFIG.spring.pullEase); // резкий рост к концу
+        pullAmount = pullMax * eased;
+      } else {
+        // Возврат к базе
+        pullAmount += (0 - pullAmount) * CONFIG.spring.snapBack;
+      }
+
+      const coreRadius = CONFIG.spring.coreRadius + pullAmount;
+
+      // Центральное кольцо
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, coreRadius, 0, Math.PI * 2);
+      ctx.lineWidth = CONFIG.impactWave.lineWidth;
+      ctx.strokeStyle = COLORS.accent;
+      ctx.globalAlpha = 0.85;
+      ctx.lineCap = "round";
+      ctx.stroke();
+      ctx.restore();
+
+      // ===== 2-3) УДАРНАЯ ВОЛНА (ОДНА) =====
+      if (impactActive) {
+        const elapsed = t - impactStartSec; // сек после удара
+        if (elapsed >= 0) {
+          const front = coreRadius + elapsed * CONFIG.impactWave.speed;
+
+          // если ушло за предел — выключаем
+          if (front > maxRadius + CONFIG.impactWave.width * 2) {
+            impactActive = false;
+          } else {
+            // затухание по времени + немного по расстоянию
+            const timeFade = Math.exp(-CONFIG.impactWave.fade * elapsed);
+            const distFade = 1 - Math.min(1, front / maxRadius);
+
+            const baseAlpha =
+              CONFIG.impactWave.alphaPeak *
+              CONFIG.impactWave.amplitude *
+              timeFade *
+              (0.55 + 0.45 * distFade);
+
+            // рисуем фронт + лёгкий хвост (2 кольца)
+            for (let k = 0; k < 3; k++) {
+              const r = front - k * CONFIG.impactWave.width * 0.55;
+              if (r <= coreRadius) continue;
+
+              const a = baseAlpha * (1 - k * 0.35);
+              if (a <= 0.01) continue;
+
+              ctx.save();
+              ctx.beginPath();
+              ctx.arc(cx, cy, r, 0, Math.PI * 2);
+              ctx.lineWidth = CONFIG.impactWave.lineWidth * (1 - k * 0.12);
+              ctx.strokeStyle = COLORS.accent;
+              ctx.globalAlpha = a;
+              ctx.lineCap = "round";
+              ctx.stroke();
+              ctx.restore();
+            }
+          }
+        }
+      }
+
+      // ===== ПРОГРЕСС УДЕРЖАНИЯ =====
       if (holdProgress > 0.01) {
         const progAngle = holdProgress * Math.PI * 2;
         const progRadius = minSide * CONFIG.progress.radiusFactor;
@@ -255,7 +285,7 @@ export function SmolDropCanvas() {
         ctx.restore();
       }
 
-      // -------- СОСТОЯНИЯ --------
+      // ===== СОСТОЯНИЯ =====
       if (state === "success") {
         ctx.save();
         ctx.fillStyle = COLORS.successOverlay;
@@ -284,7 +314,6 @@ export function SmolDropCanvas() {
         holdProgress += (0 - holdProgress) * 0.15;
       }
 
-      // плавная интерполяция интенсивности
       intensity += (targetIntensity - intensity) * 0.08;
 
       drawScene(now);
