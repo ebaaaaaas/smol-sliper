@@ -25,7 +25,7 @@ const CONFIG = {
   auto: {
     cycleSec: 3.0, // период удара (меньше = чаще)
     pullPortion: 0.4, // доля цикла на натяжение
-    pausePortion: 0.12, // микро пауза перед ударом
+    pausePortion: 0.01, // микро пауза перед ударом
   },
 
   spring: {
