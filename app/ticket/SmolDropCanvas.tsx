@@ -11,62 +11,52 @@ const COLORS = {
 };
 
 const CONFIG = {
-  spacing: 70,
-  speed: 1.15, // теперь в "рад/сек" (логичнее для орбит)
-  lineWidth: 7,
-  extraRings: 3,
+  spacing: 74, // расстояние между орбитами
+  ringWidth: 10, // толщина сегментов
+  ringAlpha: 0.9,
 
+  // скорость вращения орбит (рад/сек), усиление при hold
+  spinBase: 0.65,
+  spinBoost: 1.35,
+
+  // сколько сегментов на кольцо (диапазон)
+  segMin: 3,
+  segMax: 6,
+
+  // удержание
   holdDurationMs: 800,
 
+  // прогресс удержания
   progress: {
     radiusFactor: 0.16,
     lineWidthBase: 3,
     lineWidthBoost: 2,
   },
 
-  sheen: {
-    width: 180,
-    speed: 520, // px/sec
-    alpha: 0.12,
+  // “game” эффект SUCCESS
+  success: {
+    freezeMs: 520,
+    flashMs: 120,
+    shockMs: 420,
+    burstLifeMs: 520,
+    burstCount: 38,
   },
 
+  // микрозерно (анти-скрин + “дорогая” текстура)
   noise: {
     alpha: 0.06,
-    step: 3, // крупное зерно, чтобы не грузить
+    step: 3,
+    threshold: 0.986,
   },
 
-  particles: {
-    count: 34,
-    lifeMs: 520,
-    speedMin: 180,
-    speedMax: 520,
-    sizeMin: 1.2,
-    sizeMax: 3.2,
-  },
+  // pending
+  pendingDim: 0.65,
 
-  stamp: {
-    appearMs: 320,
-    settleMs: 520,
-  },
+  // error shake
+  errorShakeMs: 260,
 };
 
 type CanvasState = "idle" | "holding" | "pending" | "success" | "error";
-
-function get2DContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("2D canvas context is not available");
-  return ctx;
-}
-
-const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
-const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
-// приятный "дорогой" easing
-const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
-const easeOutBack = (t: number) => {
-  const c1 = 1.70158;
-  const c3 = c1 + 1;
-  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
-};
 
 type Particle = {
   x: number;
@@ -78,8 +68,23 @@ type Particle = {
   size: number;
 };
 
+function get2DContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("2D canvas context is not available");
+  return ctx;
+}
+
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+const easeOutBack = (t: number) => {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+};
+
+// детерминированный псевдослучай (стабильно, без Math.random)
 function hash01(n: number) {
-  // детерминированный псевдорандом без Math.random (стабильно)
   const s = Math.sin(n * 999.123) * 43758.5453;
   return s - Math.floor(s);
 }
@@ -110,6 +115,10 @@ export function SmolDropCanvas() {
     let frameId: number | null = null;
     let apiTimeoutId: number | null = null;
 
+    // game эффекты
+    let freezeUntil = 0;
+    let shockStart = 0;
+    let burstStart = 0;
     const particles: Particle[] = [];
 
     const preventDefault = (e: Event) => e.preventDefault();
@@ -131,7 +140,6 @@ export function SmolDropCanvas() {
 
       c.width = Math.floor(width * dpr);
       c.height = Math.floor(height * dpr);
-
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
@@ -140,7 +148,8 @@ export function SmolDropCanvas() {
 
     function drawLabel(text: string, cx: number, cy: number, alpha = 0.9) {
       ctx.save();
-      ctx.font = "600 16px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+      ctx.font =
+        "600 16px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillStyle = COLORS.text;
@@ -149,207 +158,40 @@ export function SmolDropCanvas() {
       ctx.restore();
     }
 
-    function spawnSuccessParticles(now: number, cx: number, cy: number) {
-      particles.length = 0;
-      const { count, lifeMs, speedMin, speedMax, sizeMin, sizeMax } = CONFIG.particles;
+    function drawNoise() {
+      ctx.save();
+      ctx.globalAlpha = CONFIG.noise.alpha;
+      ctx.fillStyle = COLORS.rings;
+      const step = CONFIG.noise.step;
 
-      for (let i = 0; i < count; i++) {
-        const a = (Math.PI * 2 * i) / count + (hash01(i + 11) - 0.5) * 0.35;
-        const sp = speedMin + (speedMax - speedMin) * hash01(i + 77);
+      for (let y = 0; y < height; y += step) {
+        for (let x = 0; x < width; x += step) {
+          const v = hash01(x * 0.07 + y * 0.11);
+          if (v > CONFIG.noise.threshold) ctx.fillRect(x, y, 1, 1);
+        }
+      }
+      ctx.restore();
+    }
+
+    function spawnBurst(now: number, cx: number, cy: number) {
+      particles.length = 0;
+      const n = CONFIG.success.burstCount;
+
+      for (let i = 0; i < n; i++) {
+        const a =
+          (Math.PI * 2 * i) / n + (hash01(i + 11) - 0.5) * 0.35;
+        const sp =
+          200 + 420 * hash01(i + 77); // speed
         particles.push({
           x: cx,
           y: cy,
           vx: Math.cos(a) * sp,
           vy: Math.sin(a) * sp,
           born: now,
-          life: lifeMs + 120 * hash01(i + 1234),
-          size: sizeMin + (sizeMax - sizeMin) * hash01(i + 999),
+          life: CONFIG.success.burstLifeMs + 120 * hash01(i + 1234),
+          size: 1.4 + 2.8 * hash01(i + 999),
         });
       }
-    }
-
-    function onRedeem() {
-      if (redeemCalled) return;
-      redeemCalled = true;
-      setState("pending");
-
-      apiTimeoutId = window.setTimeout(() => {
-        const ok = true; // <-- тут твой реальный результат
-        setState(ok ? "success" : "error");
-        targetIntensity = ok ? 0.65 : 0.25;
-
-        if (ok) {
-          const cx = width / 2;
-          const cy = height / 2;
-          spawnSuccessParticles(performance.now(), cx, cy);
-        }
-      }, 400);
-    }
-
-    function startHold() {
-      if (state === "success" || state === "pending") return;
-      setState("holding");
-      holdStart = performance.now();
-      holdProgress = 0;
-      targetIntensity = 1;
-      redeemCalled = false;
-    }
-
-    function endHold() {
-      if (state === "holding") {
-        setState("idle");
-        targetIntensity = 0;
-      }
-    }
-
-    const handlePointerDown = (e: PointerEvent) => {
-      e.preventDefault();
-      startHold();
-    };
-
-    const handlePointerUp = (e: PointerEvent) => {
-      e.preventDefault();
-      endHold();
-    };
-
-    canvas.addEventListener("pointerdown", handlePointerDown);
-    canvas.addEventListener("pointerup", handlePointerUp);
-    canvas.addEventListener("pointercancel", handlePointerUp);
-    canvas.addEventListener("pointerleave", handlePointerUp);
-
-    function drawNoise() {
-      ctx.save();
-      ctx.globalAlpha = CONFIG.noise.alpha;
-      ctx.fillStyle = COLORS.rings;
-      const step = CONFIG.noise.step;
-      for (let y = 0; y < height; y += step) {
-        for (let x = 0; x < width; x += step) {
-          // редкая "пыль"
-          if (hash01(x * 0.07 + y * 0.11) > 0.985) {
-            ctx.fillRect(x, y, 1, 1);
-          }
-        }
-      }
-      ctx.restore();
-    }
-
-    function drawSheen(t: number) {
-      // диагональный блик, который даёт “премиум”
-      const w = CONFIG.sheen.width;
-      const x = ((t * CONFIG.sheen.speed) % (width + w * 2)) - w;
-      ctx.save();
-      ctx.translate(x, 0);
-      ctx.rotate(-0.35);
-
-      const g = ctx.createLinearGradient(0, 0, w, 0);
-      g.addColorStop(0, "rgba(184, 251, 60, 0)");
-      g.addColorStop(0.5, `rgba(184, 251, 60, ${CONFIG.sheen.alpha})`);
-      g.addColorStop(1, "rgba(184, 251, 60, 0)");
-
-      ctx.fillStyle = g;
-      ctx.fillRect(0, -height, w, height * 3);
-      ctx.restore();
-    }
-
-    function drawOrbitRings(t: number, cx: number, cy: number) {
-      const maxR = Math.hypot(cx, cy);
-      const ringCount = Math.ceil(maxR / CONFIG.spacing) + CONFIG.extraRings;
-
-      const baseSpin = CONFIG.speed * (0.7 + 0.7 * intensity); // ускоряем при удержании
-      const pull = state === "holding" ? 10 * intensity : 0; // лёгкое "сжатие"
-
-      ctx.save();
-      ctx.strokeStyle = COLORS.rings;
-      ctx.lineWidth = CONFIG.lineWidth;
-      ctx.lineCap = "round";
-      ctx.globalAlpha = 0.92;
-
-      for (let i = 0; i < ringCount; i++) {
-        const r = i * CONFIG.spacing + 14 - pull;
-        if (r <= 0 || r > maxR + CONFIG.lineWidth) continue;
-
-        // вместо полного круга — 3–5 сегментов на кольцо
-        const segs = 3 + Math.floor(hash01(i + 1) * 3);
-        const rot = t * baseSpin * (0.6 + hash01(i + 33)) + i * 0.45;
-
-        for (let s = 0; s < segs; s++) {
-          const start = rot + (Math.PI * 2 * s) / segs + (hash01(i * 19 + s) - 0.5) * 0.25;
-          const len = (0.55 + 0.25 * Math.sin(t * 1.7 + i * 0.3)) * (Math.PI * 2) / segs;
-          const end = start + len * (0.72 + 0.22 * hash01(i * 7 + s * 13));
-
-          ctx.beginPath();
-          ctx.arc(cx, cy, r, start, end);
-          ctx.stroke();
-        }
-      }
-
-      ctx.restore();
-    }
-
-    function drawHoldProgress(cx: number, cy: number) {
-      if (holdProgress <= 0.01) return;
-
-      const progAngle = holdProgress * Math.PI * 2;
-      const minSide = Math.min(width, height);
-      const progRadius = minSide * CONFIG.progress.radiusFactor;
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(cx, cy, progRadius, -Math.PI / 2, -Math.PI / 2 + progAngle);
-      ctx.lineWidth = CONFIG.progress.lineWidthBase + CONFIG.progress.lineWidthBoost * intensity;
-      ctx.strokeStyle = COLORS.rings;
-      ctx.globalAlpha = 0.96;
-      ctx.lineCap = "round";
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    function drawStamp(now: number, cx: number, cy: number) {
-      const dt = now - stateStart;
-      const appearT = clamp01(dt / CONFIG.stamp.appearMs);
-      const settleT = clamp01(dt / CONFIG.stamp.settleMs);
-      const s = easeOutBack(appearT);
-
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(-0.12 * (1 - easeOutCubic(settleT)));
-
-      ctx.globalAlpha = 0.92;
-      ctx.scale(s, s);
-
-      const w = Math.min(width, 320);
-      const h = 86;
-      const x = -w / 2;
-      const y = -h / 2;
-
-      // рамка
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = COLORS.rings;
-      ctx.fillStyle = "rgba(0, 11, 59, 0.55)";
-      // rounded rect
-      const r = 18;
-      ctx.beginPath();
-      ctx.moveTo(x + r, y);
-      ctx.lineTo(x + w - r, y);
-      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-      ctx.lineTo(x + w, y + h - r);
-      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-      ctx.lineTo(x + r, y + h);
-      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-      ctx.lineTo(x, y + r);
-      ctx.quadraticCurveTo(x, y, x + r, y);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-
-      // текст
-      ctx.fillStyle = COLORS.rings;
-      ctx.font = "800 22px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("ПОГАШЕНО", 0, 0);
-
-      ctx.restore();
     }
 
     function drawParticles(now: number) {
@@ -368,13 +210,12 @@ export function SmolDropCanvas() {
           continue;
         }
 
-        // движение
-        p.x += (p.vx / 60) * (1 + 0.2 * intensity);
-        p.y += (p.vy / 60) * (1 + 0.2 * intensity);
-        // затухание
-        const a = 1 - easeOutCubic(t);
+        // движение (60fps аппрокс)
+        p.x += p.vx / 60;
+        p.y += p.vy / 60;
 
-        ctx.globalAlpha = 0.65 * a;
+        const a = 1 - easeOutCubic(t);
+        ctx.globalAlpha = 0.7 * a;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx.fill();
@@ -383,112 +224,147 @@ export function SmolDropCanvas() {
       ctx.restore();
     }
 
-    function drawScene(now: number) {
-      const t = now / 1000;
+    function drawShockwave(now: number, cx: number, cy: number) {
+      if (state !== "success") return;
+      const dt = now - shockStart;
+      if (dt < 0 || dt > CONFIG.success.shockMs) return;
 
-      // фон
-      ctx.fillStyle = COLORS.bg;
-      ctx.fillRect(0, 0, width, height);
+      const p = dt / CONFIG.success.shockMs; // 0..1
+      const k = 1 - p;
+      const max = Math.min(width, height) * 0.52;
+      const r = max * (0.12 + 0.88 * p);
 
-      const cx = width / 2;
-      const cy = height / 2;
+      ctx.save();
+      ctx.strokeStyle = COLORS.rings;
 
-      // shake для error — дешёво и эффективно
-      if (state === "error") {
-        const dt = now - stateStart;
-        const k = clamp01(1 - dt / 260);
-        const sx = (Math.sin(dt * 0.22) * 6) * k;
-        const sy = (Math.cos(dt * 0.18) * 4) * k;
-        ctx.save();
-        ctx.translate(sx, sy);
-      }
+      // основной контур
+      ctx.globalAlpha = 0.6 * k;
+      ctx.lineWidth = 10 * k + 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
 
-      // “дорогость”: орбиты + блик + лёгкий шум
-      drawOrbitRings(t, cx, cy);
-      drawSheen(t);
-      drawNoise();
+      // glow
+      ctx.globalAlpha = 0.18 * k;
+      ctx.lineWidth = 24 * k + 6;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
 
-      // прогресс удержания
-      drawHoldProgress(cx, cy);
-
-      // states overlay + label
-      if (state === "success") {
-        // flash в начале успеха
-        const dt = now - stateStart;
-        const flash = clamp01(1 - dt / 140);
-        ctx.save();
-        ctx.globalAlpha = 0.55 * flash;
-        ctx.fillStyle = COLORS.rings;
-        ctx.fillRect(0, 0, width, height);
-        ctx.restore();
-
-        ctx.save();
-        ctx.fillStyle = COLORS.successOverlay;
-        ctx.fillRect(0, 0, width, height);
-        ctx.restore();
-
-        drawStamp(now, cx, cy + 2);
-        drawParticles(now);
-        drawLabel("Билет погашён", cx, cy + 78, 0.9);
-      } else if (state === "error") {
-        ctx.save();
-        ctx.fillStyle = COLORS.errorOverlay;
-        ctx.fillRect(0, 0, width, height);
-        ctx.restore();
-        drawLabel("Ошибка", cx, cy, 0.95);
-      } else if (state === "pending") {
-        drawLabel("Проверка…", cx, cy, 0.92);
-      } else if (state === "holding") {
-        drawLabel("Держи…", cx, cy + 64, 0.75);
-      }
-
-      if (state === "error") {
-        ctx.restore(); // закрываем translate shake
-      }
+      ctx.restore();
     }
 
-    function loop(now: number) {
-      if (state === "holding") {
-        const elapsed = now - holdStart;
-        holdProgress = clamp01(elapsed / CONFIG.holdDurationMs);
-        if (holdProgress >= 1 && !redeemCalled) onRedeem();
-      } else {
-        holdProgress += (0 - holdProgress) * 0.15;
-      }
+    function drawHoldProgress(cx: number, cy: number) {
+      if (holdProgress <= 0.01) return;
 
-      intensity = lerp(intensity, targetIntensity, 0.08);
+      const progAngle = holdProgress * Math.PI * 2;
+      const minSide = Math.min(width, height);
+      const progRadius = minSide * CONFIG.progress.radiusFactor;
 
-      drawScene(now);
-      frameId = requestAnimationFrame(loop);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, progRadius, -Math.PI / 2, -Math.PI / 2 + progAngle);
+      ctx.lineWidth =
+        CONFIG.progress.lineWidthBase + CONFIG.progress.lineWidthBoost * intensity;
+      ctx.strokeStyle = COLORS.rings;
+      ctx.globalAlpha = 0.96;
+      ctx.lineCap = "round";
+      ctx.stroke();
+      ctx.restore();
     }
 
-    frameId = requestAnimationFrame(loop);
+    function drawStamp(now: number, cx: number, cy: number) {
+      // game-pop + лёгкий back easing
+      const dt = now - stateStart;
+      const t = clamp01(dt / 280);
+      const s = easeOutBack(t);
 
-    return () => {
-      if (frameId !== null) cancelAnimationFrame(frameId);
-      if (apiTimeoutId !== null) window.clearTimeout(apiTimeoutId);
+      // микровибра (очень маленькая) чтобы было “аркадно”
+      const jig = state === "success" ? (1 - t) * 1.3 : 0;
+      const jx = Math.sin(dt * 0.18) * jig;
+      const jy = Math.cos(dt * 0.22) * jig;
 
-      window.removeEventListener("resize", resize);
+      ctx.save();
+      ctx.translate(cx + jx, cy + jy);
+      ctx.rotate(-0.12 * (1 - easeOutCubic(t)));
+      ctx.scale(s, s);
 
-      canvas.removeEventListener("pointerdown", handlePointerDown);
-      canvas.removeEventListener("pointerup", handlePointerUp);
-      canvas.removeEventListener("pointercancel", handlePointerUp);
-      canvas.removeEventListener("pointerleave", handlePointerUp);
+      const w = Math.min(width * 0.84, 340);
+      const h = 88;
+      const x = -w / 2;
+      const y = -h / 2;
+      const r = 18;
 
-      window.removeEventListener("contextmenu", preventDefault);
-      document.removeEventListener("selectstart", preventDefault);
-    };
-  }, []);
+      // фон штампа
+      ctx.globalAlpha = 0.96;
+      ctx.fillStyle = "rgba(0, 11, 59, 0.60)";
+      ctx.strokeStyle = COLORS.rings;
+      ctx.lineWidth = 3;
 
-  return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        width: "100vw",
-        height: "100vh",
-        display: "block",
-        touchAction: "none",
-      }}
-    />
-  );
-}
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // текст
+      ctx.fillStyle = COLORS.rings;
+      ctx.font = "900 22px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("ПОГАШЕНО", 0, 0);
+
+      ctx.restore();
+    }
+
+    function drawOrbits(now: number, cx: number, cy: number) {
+      // FREEZE: используем “замороженное” время для движения орбит
+      const timeNow = now < freezeUntil ? freezeUntil : now;
+      const t = timeNow / 1000;
+
+      const maxR = Math.hypot(cx, cy);
+      const ringCount = Math.ceil(maxR / CONFIG.spacing) + 3;
+
+      const spin = CONFIG.spinBase + CONFIG.spinBoost * intensity;
+
+      ctx.save();
+      ctx.strokeStyle = COLORS.rings;
+      ctx.lineWidth = CONFIG.ringWidth;
+      ctx.lineCap = "round";
+
+      // в success/pending чуть приглушаем фон, чтобы центр доминировал
+      const bgDim =
+        state === "success" ? 0.40 : state === "pending" ? CONFIG.pendingDim : 1.0;
+
+      ctx.globalAlpha = CONFIG.ringAlpha * bgDim;
+
+      for (let i = 0; i < ringCount; i++) {
+        const r = i * CONFIG.spacing + 18;
+        if (r > maxR + CONFIG.ringWidth) continue;
+
+        const segs =
+          CONFIG.segMin + Math.floor(hash01(i + 1) * (CONFIG.segMax - CONFIG.segMin + 1));
+        const rot = t * spin * (0.55 + 0.65 * hash01(i + 33)) + i * 0.42;
+
+        for (let s = 0; s < segs; s++) {
+          const base = (Math.PI * 2 * s) / segs;
+          const jitter = (hash01(i * 19 + s) - 0.5) * 0.22;
+          const start = rot + base + jitter;
+
+          // длина сегмента “дышит”
+          const breathe = 0.65 + 0.25 * Math.sin((now / 1000) * 1.6 + i * 0.35);
+          const len =
+            breathe * (Math.PI * 2) / segs * (0.70 + 0.22 * hash01(i * 7 + s * 13));
+
+          ctx.beginPath();
+          ctx.arc(cx, cy, r, start, start + len);
+          ctx.stroke();
+       
