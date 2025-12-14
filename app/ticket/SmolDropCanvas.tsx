@@ -11,62 +11,38 @@ const COLORS = {
 };
 
 const CONFIG = {
-  spacing: 74, // расстояние между орбитами
-  ringWidth: 10, // толщина сегментов
-  ringAlpha: 0.9,
-
-  // скорость вращения орбит (рад/сек), усиление при hold
-  spinBase: 0.65,
-  spinBoost: 1.35,
-
-  // сколько сегментов на кольцо (диапазон)
-  segMin: 3,
-  segMax: 6,
-
-  // удержание
   holdDurationMs: 800,
 
-  // прогресс удержания
-  progress: {
-    radiusFactor: 0.16,
-    lineWidthBase: 3,
-    lineWidthBoost: 2,
-  },
+  // Спираль
+  lineWidth: 8,
+  centerDotRadius: 3.2,
+  spiralTightness: 0.018, // чем больше — тем быстрее разъезжается радиус
+  maxTurns: 10.5, // сколько витков максимум (визуально)
+  segmentsPerTurn: 140, // плотность линии
 
-  // “game” эффект SUCCESS
-  success: {
-    freezeMs: 520,
-    flashMs: 120,
-    shockMs: 420,
-    burstLifeMs: 520,
-    burstCount: 38,
-  },
+  // Скорости (рад/сек)
+  idleSpin: 0.85,
+  holdingSpin: 2.2,
+  pendingSpin: 3.2,
+  successSpin: 7.5,
 
-  // микрозерно (анти-скрин + “дорогая” текстура)
-  noise: {
-    alpha: 0.06,
-    step: 3,
-    threshold: 0.986,
-  },
+  // Скорость “разматывания” (как быстро растёт длина спирали)
+  idleUnspool: 2.0, // рад/сек
+  holdingUnspool: 6.0,
+  pendingUnspool: 9.0,
+  successUnspool: 22.0,
 
-  // pending
-  pendingDim: 0.65,
+  // Плавность переходов
+  lerpK: 0.10,
 
-  // error shake
+  // После success держим финал
+  successSettleMs: 900,
+
+  // Error shake
   errorShakeMs: 260,
 };
 
 type CanvasState = "idle" | "holding" | "pending" | "success" | "error";
-
-type Particle = {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  born: number;
-  life: number;
-  size: number;
-};
 
 function get2DContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
   const ctx = canvas.getContext("2d");
@@ -82,12 +58,6 @@ const easeOutBack = (t: number) => {
   const c3 = c1 + 1;
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 };
-
-// детерминированный псевдослучай (стабильно, без Math.random)
-function hash01(n: number) {
-  const s = Math.sin(n * 999.123) * 43758.5453;
-  return s - Math.floor(s);
-}
 
 export function SmolDropCanvas() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -108,18 +78,22 @@ export function SmolDropCanvas() {
     let holdStart = 0;
     let holdProgress = 0;
 
-    let intensity = 0;
-    let targetIntensity = 0;
-
     let redeemCalled = false;
     let frameId: number | null = null;
     let apiTimeoutId: number | null = null;
 
-    // game эффекты
-    let freezeUntil = 0;
-    let shockStart = 0;
-    let burstStart = 0;
-    const particles: Particle[] = [];
+    // Управление спиралью
+    let thetaLen = 0; // текущая “длина” спирали (в радианах)
+    let thetaLenTarget = 0;
+
+    let spin = CONFIG.idleSpin;
+    let spinTarget = CONFIG.idleSpin;
+
+    let unspool = CONFIG.idleUnspool;
+    let unspoolTarget = CONFIG.idleUnspool;
+
+    let phase = 0; // вращение спирали
+    let phaseTarget = 0;
 
     const preventDefault = (e: Event) => e.preventDefault();
     window.addEventListener("contextmenu", preventDefault);
@@ -158,144 +132,81 @@ export function SmolDropCanvas() {
       ctx.restore();
     }
 
-    function drawNoise() {
-      ctx.save();
-      ctx.globalAlpha = CONFIG.noise.alpha;
-      ctx.fillStyle = COLORS.rings;
-      const step = CONFIG.noise.step;
+    function startHold() {
+      if (state === "success" || state === "pending") return;
+      setState("holding");
+      holdStart = performance.now();
+      holdProgress = 0;
+      redeemCalled = false;
 
-      for (let y = 0; y < height; y += step) {
-        for (let x = 0; x < width; x += step) {
-          const v = hash01(x * 0.07 + y * 0.11);
-          if (v > CONFIG.noise.threshold) ctx.fillRect(x, y, 1, 1);
+      spinTarget = CONFIG.holdingSpin;
+      unspoolTarget = CONFIG.holdingUnspool;
+    }
+
+    function endHold() {
+      if (state === "holding") {
+        setState("idle");
+        spinTarget = CONFIG.idleSpin;
+        unspoolTarget = CONFIG.idleUnspool;
+      }
+    }
+
+    function onRedeem() {
+      if (redeemCalled) return;
+      redeemCalled = true;
+      setState("pending");
+
+      spinTarget = CONFIG.pendingSpin;
+      unspoolTarget = CONFIG.pendingUnspool;
+
+      apiTimeoutId = window.setTimeout(() => {
+        const ok = true; // <-- подставь реальный результат
+        if (ok) {
+          setState("success");
+          spinTarget = CONFIG.successSpin;
+          unspoolTarget = CONFIG.successUnspool;
+
+          // на успех — доматываем спираль до максимума быстро
+          thetaLenTarget = CONFIG.maxTurns * Math.PI * 2;
+        } else {
+          setState("error");
+          // при ошибке возвращаемся к idle параметрам
+          spinTarget = CONFIG.idleSpin;
+          unspoolTarget = CONFIG.idleUnspool;
         }
-      }
-      ctx.restore();
+      }, 400);
     }
 
-    function spawnBurst(now: number, cx: number, cy: number) {
-      particles.length = 0;
-      const n = CONFIG.success.burstCount;
+    const handlePointerDown = (e: PointerEvent) => {
+      e.preventDefault();
+      startHold();
+    };
+    const handlePointerUp = (e: PointerEvent) => {
+      e.preventDefault();
+      endHold();
+    };
 
-      for (let i = 0; i < n; i++) {
-        const a =
-          (Math.PI * 2 * i) / n + (hash01(i + 11) - 0.5) * 0.35;
-        const sp =
-          200 + 420 * hash01(i + 77); // speed
-        particles.push({
-          x: cx,
-          y: cy,
-          vx: Math.cos(a) * sp,
-          vy: Math.sin(a) * sp,
-          born: now,
-          life: CONFIG.success.burstLifeMs + 120 * hash01(i + 1234),
-          size: 1.4 + 2.8 * hash01(i + 999),
-        });
-      }
-    }
-
-    function drawParticles(now: number) {
-      if (!particles.length) return;
-
-      ctx.save();
-      ctx.fillStyle = COLORS.rings;
-
-      for (let i = particles.length - 1; i >= 0; i--) {
-        const p = particles[i];
-        const age = now - p.born;
-        const t = age / p.life;
-
-        if (t >= 1) {
-          particles.splice(i, 1);
-          continue;
-        }
-
-        // движение (60fps аппрокс)
-        p.x += p.vx / 60;
-        p.y += p.vy / 60;
-
-        const a = 1 - easeOutCubic(t);
-        ctx.globalAlpha = 0.7 * a;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      ctx.restore();
-    }
-
-    function drawShockwave(now: number, cx: number, cy: number) {
-      if (state !== "success") return;
-      const dt = now - shockStart;
-      if (dt < 0 || dt > CONFIG.success.shockMs) return;
-
-      const p = dt / CONFIG.success.shockMs; // 0..1
-      const k = 1 - p;
-      const max = Math.min(width, height) * 0.52;
-      const r = max * (0.12 + 0.88 * p);
-
-      ctx.save();
-      ctx.strokeStyle = COLORS.rings;
-
-      // основной контур
-      ctx.globalAlpha = 0.6 * k;
-      ctx.lineWidth = 10 * k + 2;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // glow
-      ctx.globalAlpha = 0.18 * k;
-      ctx.lineWidth = 24 * k + 6;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.stroke();
-
-      ctx.restore();
-    }
-
-    function drawHoldProgress(cx: number, cy: number) {
-      if (holdProgress <= 0.01) return;
-
-      const progAngle = holdProgress * Math.PI * 2;
-      const minSide = Math.min(width, height);
-      const progRadius = minSide * CONFIG.progress.radiusFactor;
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(cx, cy, progRadius, -Math.PI / 2, -Math.PI / 2 + progAngle);
-      ctx.lineWidth =
-        CONFIG.progress.lineWidthBase + CONFIG.progress.lineWidthBoost * intensity;
-      ctx.strokeStyle = COLORS.rings;
-      ctx.globalAlpha = 0.96;
-      ctx.lineCap = "round";
-      ctx.stroke();
-      ctx.restore();
-    }
+    canvas.addEventListener("pointerdown", handlePointerDown);
+    canvas.addEventListener("pointerup", handlePointerUp);
+    canvas.addEventListener("pointercancel", handlePointerUp);
+    canvas.addEventListener("pointerleave", handlePointerUp);
 
     function drawStamp(now: number, cx: number, cy: number) {
-      // game-pop + лёгкий back easing
       const dt = now - stateStart;
-      const t = clamp01(dt / 280);
+      const t = clamp01(dt / 300);
       const s = easeOutBack(t);
 
-      // микровибра (очень маленькая) чтобы было “аркадно”
-      const jig = state === "success" ? (1 - t) * 1.3 : 0;
-      const jx = Math.sin(dt * 0.18) * jig;
-      const jy = Math.cos(dt * 0.22) * jig;
-
       ctx.save();
-      ctx.translate(cx + jx, cy + jy);
-      ctx.rotate(-0.12 * (1 - easeOutCubic(t)));
+      ctx.translate(cx, cy);
+      ctx.rotate(-0.10 * (1 - easeOutCubic(t)));
       ctx.scale(s, s);
 
       const w = Math.min(width * 0.84, 340);
-      const h = 88;
+      const h = 86;
       const x = -w / 2;
       const y = -h / 2;
       const r = 18;
 
-      // фон штампа
       ctx.globalAlpha = 0.96;
       ctx.fillStyle = "rgba(0, 11, 59, 0.60)";
       ctx.strokeStyle = COLORS.rings;
@@ -315,7 +226,6 @@ export function SmolDropCanvas() {
       ctx.fill();
       ctx.stroke();
 
-      // текст
       ctx.fillStyle = COLORS.rings;
       ctx.font = "900 22px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
       ctx.textAlign = "center";
@@ -325,130 +235,71 @@ export function SmolDropCanvas() {
       ctx.restore();
     }
 
-    function drawOrbits(now: number, cx: number, cy: number) {
-      // FREEZE: используем “замороженное” время для движения орбит
-      const timeNow = now < freezeUntil ? freezeUntil : now;
-      const t = timeNow / 1000;
+    function drawSpiral(now: number, cx: number, cy: number) {
+      // мягкое вращение фазы + “дыхание” толщины
+      phaseTarget += spin * (1 / 60);
+      phase = lerp(phase, phaseTarget, 0.10);
 
-      const maxR = Math.hypot(cx, cy);
-      const ringCount = Math.ceil(maxR / CONFIG.spacing) + 3;
+      // вычисляем коэффициент спирали от экрана
+      const minSide = Math.min(width, height);
+      const a = minSide * CONFIG.spiralTightness; // r = a * theta
 
-      const spin = CONFIG.spinBase + CONFIG.spinBoost * intensity;
+      // сколько точек рисуем
+      const thetaMax = Math.max(0.01, thetaLen);
+      const turns = thetaMax / (Math.PI * 2);
+      const segments = Math.min(
+        Math.floor(turns * CONFIG.segmentsPerTurn),
+        2400
+      );
 
       ctx.save();
       ctx.strokeStyle = COLORS.rings;
-      ctx.lineWidth = CONFIG.ringWidth;
+      ctx.lineWidth = CONFIG.lineWidth;
       ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.globalAlpha = 0.95;
 
-      // в success/pending чуть приглушаем фон, чтобы центр доминировал
-      const bgDim =
-        state === "success" ? 0.40 : state === "pending" ? CONFIG.pendingDim : 1.0;
+      ctx.beginPath();
 
-      ctx.globalAlpha = CONFIG.ringAlpha * bgDim;
+      for (let i = 0; i <= segments; i++) {
+        const p = i / Math.max(1, segments);
+        const th = thetaMax * p;
 
-      for (let i = 0; i < ringCount; i++) {
-        const r = i * CONFIG.spacing + 18;
-        if (r > maxR + CONFIG.ringWidth) continue;
+        // спираль Архимеда
+        const r = a * th;
 
-        const segs =
-          CONFIG.segMin + Math.floor(hash01(i + 1) * (CONFIG.segMax - CONFIG.segMin + 1));
-        const rot = t * spin * (0.55 + 0.65 * hash01(i + 33)) + i * 0.42;
+        // лёгкая “игровая” вибрация амплитуды (очень умеренно)
+        const wobble = 1 + 0.012 * Math.sin(th * 3.2 + now / 170);
 
-        for (let s = 0; s < segs; s++) {
-          const base = (Math.PI * 2 * s) / segs;
-          const jitter = (hash01(i * 19 + s) - 0.5) * 0.22;
-          const start = rot + base + jitter;
+        const ang = th + phase;
+        const x = cx + Math.cos(ang) * r * wobble;
+        const y = cy + Math.sin(ang) * r * wobble;
 
-          // длина сегмента “дышит”
-          const breathe = 0.65 + 0.25 * Math.sin((now / 1000) * 1.6 + i * 0.35);
-          const len =
-            breathe * (Math.PI * 2) / segs * (0.70 + 0.22 * hash01(i * 7 + s * 13));
-
-          ctx.beginPath();
-          ctx.arc(cx, cy, r, start, start + len);
-          ctx.stroke();
-        }
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
       }
 
-      // маленький “ядро-спиннер” в центре на pending/holding
-      if (state === "holding" || state === "pending") {
-        const coreR = Math.min(width, height) * 0.038;
-        const coreSegs = 6;
-        ctx.globalAlpha = 0.95;
-        for (let k = 0; k < coreSegs; k++) {
-          const a = t * 4.6 + (Math.PI * 2 * k) / coreSegs;
-          ctx.beginPath();
-          ctx.arc(cx, cy, coreR, a, a + 0.55);
-          ctx.stroke();
-        }
-      }
+      ctx.stroke();
+      ctx.restore();
 
+      // центральная точка
+      ctx.save();
+      ctx.fillStyle = COLORS.rings;
+      ctx.globalAlpha = 0.95;
+      ctx.beginPath();
+      ctx.arc(cx, cy, CONFIG.centerDotRadius, 0, Math.PI * 2);
+      ctx.fill();
       ctx.restore();
     }
-
-    function onRedeem() {
-      if (redeemCalled) return;
-      redeemCalled = true;
-      setState("pending");
-
-      apiTimeoutId = window.setTimeout(() => {
-        const ok = true; // <-- здесь подставь реальный результат
-        if (ok) {
-          const now = performance.now();
-          freezeUntil = now + CONFIG.success.freezeMs;
-          shockStart = now;
-          burstStart = now;
-          spawnBurst(now, width / 2, height / 2);
-
-          setState("success");
-          targetIntensity = 0.6;
-        } else {
-          setState("error");
-          targetIntensity = 0.2;
-        }
-      }, 400);
-    }
-
-    function startHold() {
-      if (state === "success" || state === "pending") return;
-      setState("holding");
-      holdStart = performance.now();
-      holdProgress = 0;
-      targetIntensity = 1;
-      redeemCalled = false;
-    }
-
-    function endHold() {
-      if (state === "holding") {
-        setState("idle");
-        targetIntensity = 0;
-      }
-    }
-
-    const handlePointerDown = (e: PointerEvent) => {
-      e.preventDefault();
-      startHold();
-    };
-
-    const handlePointerUp = (e: PointerEvent) => {
-      e.preventDefault();
-      endHold();
-    };
-
-    canvas.addEventListener("pointerdown", handlePointerDown);
-    canvas.addEventListener("pointerup", handlePointerUp);
-    canvas.addEventListener("pointercancel", handlePointerUp);
-    canvas.addEventListener("pointerleave", handlePointerUp);
 
     function drawScene(now: number) {
       const cx = width / 2;
       const cy = height / 2;
 
-      // фон
       ctx.fillStyle = COLORS.bg;
       ctx.fillRect(0, 0, width, height);
 
-      // ERROR shake (короткий)
+      // error shake
       if (state === "error") {
         const dt = now - stateStart;
         const k = clamp01(1 - dt / CONFIG.errorShakeMs);
@@ -458,44 +309,23 @@ export function SmolDropCanvas() {
         ctx.translate(sx, sy);
       }
 
-      // орбиты
-      drawOrbits(now, cx, cy);
+      drawSpiral(now, cx, cy);
 
-      // текстура/анти-скрин
-      drawNoise();
-
-      // прогресс удержания
-      drawHoldProgress(cx, cy);
-
-      // STATES
+      // UI states
       if (state === "pending") {
         drawLabel("Проверка…", cx, cy + 64, 0.92);
       }
 
       if (state === "success") {
-        // flash (игровая вспышка)
-        const dt = now - burstStart;
-        const f = clamp01(1 - dt / CONFIG.success.flashMs);
-        if (f > 0) {
-          ctx.save();
-          ctx.globalAlpha = 0.55 * f;
-          ctx.fillStyle = COLORS.rings;
-          ctx.fillRect(0, 0, width, height);
-          ctx.restore();
-        }
-
-        // мягкий зелёный оверлей
+        // лёгкий зелёный оверлей
         ctx.save();
         ctx.fillStyle = COLORS.successOverlay;
         ctx.fillRect(0, 0, width, height);
         ctx.restore();
 
-        drawShockwave(now, cx, cy);
-        drawParticles(now);
-
-        // штамп “ПОГАШЕНО”
-        drawStamp(now, cx, cy);
-
+        // после доматывания — показываем штамп и текст
+        const dt = now - stateStart;
+        if (dt > 160) drawStamp(now, cx, cy);
         drawLabel("Билет погашён", cx, cy + 78, 0.9);
       }
 
@@ -512,20 +342,59 @@ export function SmolDropCanvas() {
       }
 
       if (state === "error") {
-        ctx.restore(); // закрываем shake translate
+        ctx.restore();
       }
     }
 
     function loop(now: number) {
+      // state-driven targets
+      const maxTheta = CONFIG.maxTurns * Math.PI * 2;
+
+      if (state === "idle") {
+        spinTarget = CONFIG.idleSpin;
+        unspoolTarget = CONFIG.idleUnspool;
+        // в idle спираль “дышит”: растём до ~70% и снова
+        thetaLenTarget = (maxTheta * 0.72) * (0.55 + 0.45 * (0.5 + 0.5 * Math.sin(now / 1800)));
+      }
+
       if (state === "holding") {
         const elapsed = now - holdStart;
         holdProgress = clamp01(elapsed / CONFIG.holdDurationMs);
+
+        // при удержании цель длины растёт
+        thetaLenTarget = lerp(maxTheta * 0.55, maxTheta * 0.82, holdProgress);
+
         if (holdProgress >= 1 && !redeemCalled) onRedeem();
       } else {
         holdProgress += (0 - holdProgress) * 0.15;
       }
 
-      intensity = lerp(intensity, targetIntensity, 0.08);
+      if (state === "pending") {
+        // pending — крутим и немного доматываем
+        thetaLenTarget = Math.min(maxTheta * 0.92, Math.max(thetaLenTarget, maxTheta * 0.70));
+      }
+
+      if (state === "success") {
+        // доматываем до полного, потом стабилизируем
+        thetaLenTarget = maxTheta;
+
+        const dt = now - stateStart;
+        if (dt > CONFIG.successSettleMs) {
+          // после settle можно слегка успокоить скорость, чтобы не вертелось “вечно”
+          spinTarget = 1.2;
+          unspoolTarget = 0.0;
+        }
+      }
+
+      // плавные переходы скоростей
+      spin = lerp(spin, spinTarget, CONFIG.lerpK);
+      unspool = lerp(unspool, unspoolTarget, CONFIG.lerpK);
+
+      // разматывание длины
+      const dtSec = 1 / 60;
+      // подтягиваем длину к таргету + добавляем “unspool” как скорость роста
+      const toward = (thetaLenTarget - thetaLen) * 0.08;
+      thetaLen = Math.max(0, Math.min(maxTheta, thetaLen + toward + unspool * dtSec));
 
       drawScene(now);
       frameId = requestAnimationFrame(loop);
