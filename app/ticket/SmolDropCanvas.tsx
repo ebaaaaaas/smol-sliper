@@ -367,4 +367,197 @@ export function SmolDropCanvas() {
           ctx.beginPath();
           ctx.arc(cx, cy, r, start, start + len);
           ctx.stroke();
-       
+        }
+      }
+
+      // маленький “ядро-спиннер” в центре на pending/holding
+      if (state === "holding" || state === "pending") {
+        const coreR = Math.min(width, height) * 0.038;
+        const coreSegs = 6;
+        ctx.globalAlpha = 0.95;
+        for (let k = 0; k < coreSegs; k++) {
+          const a = t * 4.6 + (Math.PI * 2 * k) / coreSegs;
+          ctx.beginPath();
+          ctx.arc(cx, cy, coreR, a, a + 0.55);
+          ctx.stroke();
+        }
+      }
+
+      ctx.restore();
+    }
+
+    function onRedeem() {
+      if (redeemCalled) return;
+      redeemCalled = true;
+      setState("pending");
+
+      apiTimeoutId = window.setTimeout(() => {
+        const ok = true; // <-- здесь подставь реальный результат
+        if (ok) {
+          const now = performance.now();
+          freezeUntil = now + CONFIG.success.freezeMs;
+          shockStart = now;
+          burstStart = now;
+          spawnBurst(now, width / 2, height / 2);
+
+          setState("success");
+          targetIntensity = 0.6;
+        } else {
+          setState("error");
+          targetIntensity = 0.2;
+        }
+      }, 400);
+    }
+
+    function startHold() {
+      if (state === "success" || state === "pending") return;
+      setState("holding");
+      holdStart = performance.now();
+      holdProgress = 0;
+      targetIntensity = 1;
+      redeemCalled = false;
+    }
+
+    function endHold() {
+      if (state === "holding") {
+        setState("idle");
+        targetIntensity = 0;
+      }
+    }
+
+    const handlePointerDown = (e: PointerEvent) => {
+      e.preventDefault();
+      startHold();
+    };
+
+    const handlePointerUp = (e: PointerEvent) => {
+      e.preventDefault();
+      endHold();
+    };
+
+    canvas.addEventListener("pointerdown", handlePointerDown);
+    canvas.addEventListener("pointerup", handlePointerUp);
+    canvas.addEventListener("pointercancel", handlePointerUp);
+    canvas.addEventListener("pointerleave", handlePointerUp);
+
+    function drawScene(now: number) {
+      const cx = width / 2;
+      const cy = height / 2;
+
+      // фон
+      ctx.fillStyle = COLORS.bg;
+      ctx.fillRect(0, 0, width, height);
+
+      // ERROR shake (короткий)
+      if (state === "error") {
+        const dt = now - stateStart;
+        const k = clamp01(1 - dt / CONFIG.errorShakeMs);
+        const sx = Math.sin(dt * 0.22) * 7 * k;
+        const sy = Math.cos(dt * 0.18) * 5 * k;
+        ctx.save();
+        ctx.translate(sx, sy);
+      }
+
+      // орбиты
+      drawOrbits(now, cx, cy);
+
+      // текстура/анти-скрин
+      drawNoise();
+
+      // прогресс удержания
+      drawHoldProgress(cx, cy);
+
+      // STATES
+      if (state === "pending") {
+        drawLabel("Проверка…", cx, cy + 64, 0.92);
+      }
+
+      if (state === "success") {
+        // flash (игровая вспышка)
+        const dt = now - burstStart;
+        const f = clamp01(1 - dt / CONFIG.success.flashMs);
+        if (f > 0) {
+          ctx.save();
+          ctx.globalAlpha = 0.55 * f;
+          ctx.fillStyle = COLORS.rings;
+          ctx.fillRect(0, 0, width, height);
+          ctx.restore();
+        }
+
+        // мягкий зелёный оверлей
+        ctx.save();
+        ctx.fillStyle = COLORS.successOverlay;
+        ctx.fillRect(0, 0, width, height);
+        ctx.restore();
+
+        drawShockwave(now, cx, cy);
+        drawParticles(now);
+
+        // штамп “ПОГАШЕНО”
+        drawStamp(now, cx, cy);
+
+        drawLabel("Билет погашён", cx, cy + 78, 0.9);
+      }
+
+      if (state === "error") {
+        ctx.save();
+        ctx.fillStyle = COLORS.errorOverlay;
+        ctx.fillRect(0, 0, width, height);
+        ctx.restore();
+        drawLabel("Ошибка", cx, cy, 0.95);
+      }
+
+      if (state === "holding") {
+        drawLabel("Держи…", cx, cy + 64, 0.75);
+      }
+
+      if (state === "error") {
+        ctx.restore(); // закрываем shake translate
+      }
+    }
+
+    function loop(now: number) {
+      if (state === "holding") {
+        const elapsed = now - holdStart;
+        holdProgress = clamp01(elapsed / CONFIG.holdDurationMs);
+        if (holdProgress >= 1 && !redeemCalled) onRedeem();
+      } else {
+        holdProgress += (0 - holdProgress) * 0.15;
+      }
+
+      intensity = lerp(intensity, targetIntensity, 0.08);
+
+      drawScene(now);
+      frameId = requestAnimationFrame(loop);
+    }
+
+    frameId = requestAnimationFrame(loop);
+
+    return () => {
+      if (frameId !== null) cancelAnimationFrame(frameId);
+      if (apiTimeoutId !== null) window.clearTimeout(apiTimeoutId);
+
+      window.removeEventListener("resize", resize);
+
+      canvas.removeEventListener("pointerdown", handlePointerDown);
+      canvas.removeEventListener("pointerup", handlePointerUp);
+      canvas.removeEventListener("pointercancel", handlePointerUp);
+      canvas.removeEventListener("pointerleave", handlePointerUp);
+
+      window.removeEventListener("contextmenu", preventDefault);
+      document.removeEventListener("selectstart", preventDefault);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        width: "100vw",
+        height: "100vh",
+        display: "block",
+        touchAction: "none",
+      }}
+    />
+  );
+}
