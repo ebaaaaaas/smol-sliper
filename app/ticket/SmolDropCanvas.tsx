@@ -16,9 +16,9 @@ const CONFIG = {
   // Спираль
   lineWidth: 8,
   centerDotRadius: 3.2,
-  spiralTightness: 0.018, // чем больше — тем быстрее разъезжается радиус
-  maxTurns: 10.5, // сколько витков максимум (визуально)
-  segmentsPerTurn: 140, // плотность линии
+  spiralTightness: 0.018, // r = a * theta, a = minSide * tightness
+  maxTurns: 10.5,
+  segmentsPerTurn: 140,
 
   // Скорости (рад/сек)
   idleSpin: 0.85,
@@ -26,8 +26,8 @@ const CONFIG = {
   pendingSpin: 3.2,
   successSpin: 7.5,
 
-  // Скорость “разматывания” (как быстро растёт длина спирали)
-  idleUnspool: 2.0, // рад/сек
+  // Скорость “разматывания” (рад/сек добавочной длины)
+  idleUnspool: 2.0,
   holdingUnspool: 6.0,
   pendingUnspool: 9.0,
   successUnspool: 22.0,
@@ -35,7 +35,10 @@ const CONFIG = {
   // Плавность переходов
   lerpK: 0.10,
 
-  // После success держим финал
+  // Интро: чтобы линия начиналась из точки
+  introMs: 900,
+
+  // После success держим финал (успокаиваем скорость)
   successSettleMs: 900,
 
   // Error shake
@@ -75,6 +78,9 @@ export function SmolDropCanvas() {
     let state: CanvasState = "idle";
     let stateStart = performance.now();
 
+    // интро-рампа: гарантирует старт из точки
+    let introStart = stateStart;
+
     let holdStart = 0;
     let holdProgress = 0;
 
@@ -92,8 +98,8 @@ export function SmolDropCanvas() {
     let unspool = CONFIG.idleUnspool;
     let unspoolTarget = CONFIG.idleUnspool;
 
-    let phase = 0; // вращение спирали
-    let phaseTarget = 0;
+    let phase = 0; // текущая фаза поворота
+    let phaseVel = 0; // вспомогательная “скорость” фазы
 
     const preventDefault = (e: Event) => e.preventDefault();
     window.addEventListener("contextmenu", preventDefault);
@@ -102,6 +108,13 @@ export function SmolDropCanvas() {
     function setState(next: CanvasState) {
       state = next;
       stateStart = performance.now();
+
+      if (next === "idle") {
+        introStart = stateStart;
+        // ВАЖНО: стартуем именно из точки
+        thetaLen = 0;
+        thetaLenTarget = 0;
+      }
     }
 
     function resize() {
@@ -134,8 +147,9 @@ export function SmolDropCanvas() {
 
     function startHold() {
       if (state === "success" || state === "pending") return;
-      setState("holding");
-      holdStart = performance.now();
+      state = "holding";
+      stateStart = performance.now();
+      holdStart = stateStart;
       holdProgress = 0;
       redeemCalled = false;
 
@@ -154,7 +168,8 @@ export function SmolDropCanvas() {
     function onRedeem() {
       if (redeemCalled) return;
       redeemCalled = true;
-      setState("pending");
+      state = "pending";
+      stateStart = performance.now();
 
       spinTarget = CONFIG.pendingSpin;
       unspoolTarget = CONFIG.pendingUnspool;
@@ -162,15 +177,17 @@ export function SmolDropCanvas() {
       apiTimeoutId = window.setTimeout(() => {
         const ok = true; // <-- подставь реальный результат
         if (ok) {
-          setState("success");
+          state = "success";
+          stateStart = performance.now();
+
           spinTarget = CONFIG.successSpin;
           unspoolTarget = CONFIG.successUnspool;
 
-          // на успех — доматываем спираль до максимума быстро
+          // на успех — доматываем спираль до максимума
           thetaLenTarget = CONFIG.maxTurns * Math.PI * 2;
         } else {
-          setState("error");
-          // при ошибке возвращаемся к idle параметрам
+          state = "error";
+          stateStart = performance.now();
           spinTarget = CONFIG.idleSpin;
           unspoolTarget = CONFIG.idleUnspool;
         }
@@ -227,7 +244,8 @@ export function SmolDropCanvas() {
       ctx.stroke();
 
       ctx.fillStyle = COLORS.rings;
-      ctx.font = "900 22px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+      ctx.font =
+        "900 22px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText("ПОГАШЕНО", 0, 0);
@@ -236,20 +254,19 @@ export function SmolDropCanvas() {
     }
 
     function drawSpiral(now: number, cx: number, cy: number) {
-      // мягкое вращение фазы + “дыхание” толщины
-      phaseTarget += spin * (1 / 60);
-      phase = lerp(phase, phaseTarget, 0.10);
+      // фаза вращения (делаем стабильной и управляемой)
+      const dtSec = 1 / 60;
+      phaseVel = lerp(phaseVel, spin, 0.12);
+      phase += phaseVel * dtSec;
 
-      // вычисляем коэффициент спирали от экрана
       const minSide = Math.min(width, height);
-      const a = minSide * CONFIG.spiralTightness; // r = a * theta
+      const a = minSide * CONFIG.spiralTightness;
 
-      // сколько точек рисуем
-      const thetaMax = Math.max(0.01, thetaLen);
+      const thetaMax = Math.max(0.001, thetaLen);
       const turns = thetaMax / (Math.PI * 2);
       const segments = Math.min(
         Math.floor(turns * CONFIG.segmentsPerTurn),
-        2400
+        2600
       );
 
       ctx.save();
@@ -265,11 +282,11 @@ export function SmolDropCanvas() {
         const p = i / Math.max(1, segments);
         const th = thetaMax * p;
 
-        // спираль Архимеда
+        // Архимедова спираль
         const r = a * th;
 
-        // лёгкая “игровая” вибрация амплитуды (очень умеренно)
-        const wobble = 1 + 0.012 * Math.sin(th * 3.2 + now / 170);
+        // лёгкая “игровая” пульсация — но не ломает старт из точки
+        const wobble = 1 + 0.010 * Math.sin(th * 3.0 + now / 180);
 
         const ang = th + phase;
         const x = cx + Math.cos(ang) * r * wobble;
@@ -317,13 +334,11 @@ export function SmolDropCanvas() {
       }
 
       if (state === "success") {
-        // лёгкий зелёный оверлей
         ctx.save();
         ctx.fillStyle = COLORS.successOverlay;
         ctx.fillRect(0, 0, width, height);
         ctx.restore();
 
-        // после доматывания — показываем штамп и текст
         const dt = now - stateStart;
         if (dt > 160) drawStamp(now, cx, cy);
         drawLabel("Билет погашён", cx, cy + 78, 0.9);
@@ -347,54 +362,72 @@ export function SmolDropCanvas() {
     }
 
     function loop(now: number) {
-      // state-driven targets
       const maxTheta = CONFIG.maxTurns * Math.PI * 2;
 
+      // IDLE: сначала интро (из точки), потом лёгкое дыхание
       if (state === "idle") {
         spinTarget = CONFIG.idleSpin;
         unspoolTarget = CONFIG.idleUnspool;
-        // в idle спираль “дышит”: растём до ~70% и снова
-        thetaLenTarget = (maxTheta * 0.72) * (0.55 + 0.45 * (0.5 + 0.5 * Math.sin(now / 1800)));
+
+        const introT = clamp01((now - introStart) / CONFIG.introMs);
+        const introK = easeOutCubic(introT);
+
+        const idleLen = maxTheta * 0.78;
+
+        // пока интро не закончено — без “дыхания”
+        const breathe =
+          introT < 1
+            ? 1
+            : 0.92 + 0.08 * (0.5 + 0.5 * Math.sin(now / 1800));
+
+        thetaLenTarget = idleLen * introK * breathe;
       }
 
+      // HOLDING: растём от текущего состояния к более длинной спирали
       if (state === "holding") {
         const elapsed = now - holdStart;
         holdProgress = clamp01(elapsed / CONFIG.holdDurationMs);
 
-        // при удержании цель длины растёт
-        thetaLenTarget = lerp(maxTheta * 0.55, maxTheta * 0.82, holdProgress);
+        thetaLenTarget = lerp(maxTheta * 0.62, maxTheta * 0.90, holdProgress);
 
         if (holdProgress >= 1 && !redeemCalled) onRedeem();
       } else {
         holdProgress += (0 - holdProgress) * 0.15;
       }
 
+      // PENDING: ускоряемся и подматываем к почти полной
       if (state === "pending") {
-        // pending — крутим и немного доматываем
-        thetaLenTarget = Math.min(maxTheta * 0.92, Math.max(thetaLenTarget, maxTheta * 0.70));
+        thetaLenTarget = Math.max(thetaLenTarget, maxTheta * 0.82);
       }
 
+      // SUCCESS: быстро доматываем до полной, потом успокаиваем
       if (state === "success") {
-        // доматываем до полного, потом стабилизируем
         thetaLenTarget = maxTheta;
 
         const dt = now - stateStart;
         if (dt > CONFIG.successSettleMs) {
-          // после settle можно слегка успокоить скорость, чтобы не вертелось “вечно”
           spinTarget = 1.2;
           unspoolTarget = 0.0;
         }
       }
 
-      // плавные переходы скоростей
+      // ERROR: просто держим (можно вернуть idle после таймера при желании)
+      if (state === "error") {
+        spinTarget = CONFIG.idleSpin;
+        unspoolTarget = CONFIG.idleUnspool;
+      }
+
+      // Плавные переходы
       spin = lerp(spin, spinTarget, CONFIG.lerpK);
       unspool = lerp(unspool, unspoolTarget, CONFIG.lerpK);
 
-      // разматывание длины
+      // Обновление длины: тянемся к цели + добавляем “разматывание”
       const dtSec = 1 / 60;
-      // подтягиваем длину к таргету + добавляем “unspool” как скорость роста
-      const toward = (thetaLenTarget - thetaLen) * 0.08;
-      thetaLen = Math.max(0, Math.min(maxTheta, thetaLen + toward + unspool * dtSec));
+      const toward = (thetaLenTarget - thetaLen) * 0.10; // скорость догонялки
+      thetaLen = Math.max(
+        0,
+        Math.min(maxTheta, thetaLen + toward + unspool * dtSec)
+      );
 
       drawScene(now);
       frameId = requestAnimationFrame(loop);
