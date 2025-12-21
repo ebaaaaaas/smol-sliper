@@ -51,7 +51,7 @@ const easeOutBack = (t: number) => {
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 };
 
-export default function SmolDropCanvas() {
+export function SmolDropCanvas() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
   // === НОВЫЕ ПЕРЕМЕННЫЕ STATE ===
