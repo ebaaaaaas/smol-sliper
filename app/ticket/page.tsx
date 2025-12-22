@@ -2,21 +2,29 @@
 
 import { useEffect, useState } from "react";
 
-// === URL N8N ===
+/* === N8N ENDPOINTS === */
 const INFO_WEBHOOK = "https://myn8nbeget.su/webhook/ticket-info";
 const REDEEM_WEBHOOK = "https://myn8nbeget.su/webhook/redeem-ticket";
 
-export default function TicketPage() {
-  const [ticketStatus, setTicketStatus] = useState<
-    "loading" | "active" | "redeemed" | "invalid" | "error"
-  >("loading");
+/* === BRAND COLORS === */
+const COLORS = {
+  bg: "#000B3B",        // фирменный синий
+  accent: "#B8FB3C",    // фирменный салатовый
+  text: "#FFFFFF",
+  muted: "rgba(255,255,255,0.7)",
+  mutedWeak: "rgba(255,255,255,0.55)",
+};
 
+type TicketStatus = "loading" | "active" | "redeemed" | "invalid" | "error";
+
+export default function TicketPage() {
+  const [status, setStatus] = useState<TicketStatus>("loading");
+  const [uuid, setUuid] = useState<string | null>(null);
   const [offlineToken, setOfflineToken] = useState<string | null>(null);
   const [showOffline, setShowOffline] = useState(false);
-  const [uuid, setUuid] = useState<string | null>(null);
-  const [isRedeeming, setIsRedeeming] = useState(false);
+  const [redeeming, setRedeeming] = useState(false);
 
-  // === ЗАГРУЗКА БИЛЕТА ===
+  /* === LOAD TICKET === */
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -24,23 +32,23 @@ export default function TicketPage() {
     const t = params.get("t");
 
     if (!t) {
-      setTicketStatus("invalid");
+      setStatus("invalid");
       return;
     }
 
     setUuid(t);
 
     fetch(`${INFO_WEBHOOK}?t=${t}`)
-      .then((r) => r.json())
-      .then((data) => {
+      .then(r => r.json())
+      .then(data => {
         if (!data?.status) {
-          setTicketStatus("error");
+          setStatus("error");
           return;
         }
 
-        if (data.status === "active") setTicketStatus("active");
-        else if (data.status === "redeemed") setTicketStatus("redeemed");
-        else setTicketStatus("invalid");
+        if (data.status === "active") setStatus("active");
+        else if (data.status === "redeemed") setStatus("redeemed");
+        else setStatus("invalid");
 
         if (data.offline_token) {
           setOfflineToken(data.offline_token);
@@ -48,79 +56,87 @@ export default function TicketPage() {
         }
       })
       .catch(() => {
+        // offline fallback
         const cached = localStorage.getItem("sliper_offline_token");
         if (cached) setOfflineToken(cached);
-        setTicketStatus("active"); // offline-допуск
+        setStatus("active");
       });
   }, []);
 
-  // === ОНЛАЙН ПОГАШЕНИЕ ===
+  /* === REDEEM === */
   const redeemTicket = async () => {
-    if (!uuid || isRedeeming) return;
+    if (!uuid || redeeming) return;
 
-    setIsRedeeming(true);
+    setRedeeming(true);
 
     try {
       const res = await fetch(`${REDEEM_WEBHOOK}?t=${uuid}`, {
         method: "POST",
       });
-
       const data = await res.json();
 
       if (data?.success) {
-        setTicketStatus("redeemed");
+        setStatus("redeemed");
       } else {
-        setTicketStatus("error");
+        setStatus("error");
       }
     } catch {
-      setTicketStatus("error");
+      setStatus("error");
     } finally {
-      setIsRedeeming(false);
+      setRedeeming(false);
     }
   };
 
-  // === UI ===
   return (
     <div style={styles.page}>
-      {ticketStatus === "loading" && <h2>Загрузка билета…</h2>}
+      {status === "loading" && <p>Загрузка билета…</p>}
 
-      {ticketStatus === "active" && (
+      {/* === ACTIVE === */}
+      {status === "active" && (
         <>
-          <h1 style={styles.status}>АКТИВЕН</h1>
+          <h1 style={styles.title}>АКТИВЕН</h1>
           <p style={styles.subtitle}>Покажите этот экран на кассе</p>
 
           <button
+            style={styles.primaryButton}
             onClick={redeemTicket}
-            disabled={isRedeeming}
-            style={styles.button}
+            disabled={redeeming}
           >
-            {isRedeeming ? "ПРОВЕРКА…" : "ПОГАСИТЬ БИЛЕТ"}
+            {redeeming ? "ПРОВЕРКА…" : "ПОГАСИТЬ БИЛЕТ"}
           </button>
 
           <p style={styles.hint}>Нажимайте только на кассе</p>
 
-          <div style={styles.cashier}>
-            Кассиру достаточно увидеть этот экран<br />
-            Ничего вводить и сканировать не нужно
+          <div style={styles.cashierBlock}>
+            Кассир <strong>ничего не вводит</strong><br />
+            Достаточно увидеть экран
           </div>
 
+          {/* === OFFLINE LINK === */}
           {offlineToken && (
             <>
               <button
                 style={styles.link}
-                onClick={() => setShowOffline((v) => !v)}
+                onClick={() => setShowOffline(v => !v)}
               >
-                Нет интернета?
+                {showOffline ? "Скрыть аварийный код" : "Нет интернета?"}
               </button>
 
               {showOffline && (
-                <div style={styles.offline}>
-                  <h3>РЕЗЕРВНЫЙ КОД</h3>
-                  <p>Только если нет интернета</p>
-                  <code style={styles.code}>{offlineToken}</code>
-                  <p>Одноразовый</p>
-                  <p style={{ opacity: 0.8 }}>
-                    Кассиру не нужно вводить код
+                <div style={styles.offlineBox}>
+                  <div style={styles.offlineWarning}>
+                    ⚠️ Используйте этот код <strong>только если</strong><br />
+                    кнопка «Погасить билет» не работает
+                  </div>
+
+                  <h3 style={styles.offlineTitle}>АВАРИЙНЫЙ КОД</h3>
+                  <p style={styles.offlineSubtitle}>Только если нет интернета</p>
+
+                  <div style={styles.code}>{offlineToken}</div>
+
+                  <p style={styles.offlineMeta}>Одноразовый</p>
+                  <p style={styles.offlineMeta}>
+                    Кассир ничего не вводит
                   </p>
                 </div>
               )}
@@ -129,86 +145,112 @@ export default function TicketPage() {
         </>
       )}
 
-      {ticketStatus === "redeemed" && (
+      {/* === REDEEMED === */}
+      {status === "redeemed" && (
         <>
-          <h1 style={styles.status}>БИЛЕТ ИСПОЛЬЗОВАН</h1>
-          <p>Повторное использование невозможно</p>
+          <h1 style={styles.title}>БИЛЕТ ИСПОЛЬЗОВАН</h1>
+          <p style={styles.subtitle}>
+            Повторное использование невозможно
+          </p>
         </>
       )}
 
-      {(ticketStatus === "invalid" || ticketStatus === "error") && (
+      {/* === INVALID / ERROR === */}
+      {(status === "invalid" || status === "error") && (
         <>
-          <h1 style={styles.status}>БИЛЕТ НЕДЕЙСТВИТЕЛЕН</h1>
-          <p>Он уже был использован или истёк</p>
+          <h1 style={styles.title}>БИЛЕТ НЕДЕЙСТВИТЕЛЕН</h1>
+          <p style={styles.subtitle}>
+            Он уже был использован или истёк
+          </p>
         </>
       )}
     </div>
   );
 }
 
-// === СТИЛИ ===
+/* === STYLES === */
 const styles: Record<string, React.CSSProperties> = {
   page: {
     minHeight: "100vh",
-    background: "#000B3B",
-    color: "#FFFFFF",
+    background: COLORS.bg,
+    color: COLORS.text,
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
     padding: "24px",
     textAlign: "center",
-    gap: "16px",
     fontFamily: "system-ui, -apple-system, sans-serif",
+    gap: "16px",
   },
-  status: {
+  title: {
     fontSize: "28px",
     fontWeight: 900,
+    letterSpacing: "0.5px",
   },
   subtitle: {
-    opacity: 0.9,
+    color: COLORS.muted,
   },
-  button: {
-    marginTop: "16px",
+  primaryButton: {
+    marginTop: "12px",
     padding: "16px 24px",
     fontSize: "18px",
-    fontWeight: 700,
-    background: "#B8FB3C",
-    color: "#000B3B",
+    fontWeight: 800,
+    background: COLORS.accent,
+    color: COLORS.bg,
     border: "none",
-    borderRadius: "12px",
-    cursor: "pointer",
+    borderRadius: "14px",
     width: "100%",
     maxWidth: "320px",
+    cursor: "pointer",
   },
   hint: {
     fontSize: "14px",
-    opacity: 0.75,
+    color: COLORS.mutedWeak,
   },
-  cashier: {
-    marginTop: "8px",
+  cashierBlock: {
     fontSize: "14px",
-    opacity: 0.7,
+    color: COLORS.muted,
+    lineHeight: 1.4,
   },
   link: {
     marginTop: "24px",
     background: "none",
     border: "none",
-    color: "#B8FB3C",
+    color: COLORS.accent,
     textDecoration: "underline",
     cursor: "pointer",
+    fontSize: "15px",
   },
-  offline: {
+  offlineBox: {
     marginTop: "16px",
     padding: "16px",
-    border: "1px solid #B8FB3C",
-    borderRadius: "12px",
-    maxWidth: "320px",
+    border: `1px solid rgba(184,251,60,0.6)`,
+    borderRadius: "14px",
+    maxWidth: "340px",
+    opacity: 0.95,
+  },
+  offlineWarning: {
+    fontSize: "13px",
+    marginBottom: "12px",
+    color: COLORS.muted,
+  },
+  offlineTitle: {
+    fontSize: "16px",
+    fontWeight: 800,
+  },
+  offlineSubtitle: {
+    fontSize: "13px",
+    color: COLORS.mutedWeak,
   },
   code: {
-    display: "block",
-    fontSize: "24px",
-    letterSpacing: "4px",
+    fontSize: "26px",
+    letterSpacing: "6px",
     margin: "12px 0",
+    fontWeight: 900,
+  },
+  offlineMeta: {
+    fontSize: "13px",
+    color: COLORS.mutedWeak,
   },
 };
