@@ -115,7 +115,7 @@ export default function TicketPage() {
 
               {showOffline && (
                 <div style={styles.offline}>
-                  <h3>АВАРИЙНЫЙ КОД</h3>
+                  <h3>РЕЗЕРВНЫЙ КОД</h3>
                   <p>Только если нет интернета</p>
                   <code style={styles.code}>{offlineToken}</code>
                   <p>Одноразовый</p>
