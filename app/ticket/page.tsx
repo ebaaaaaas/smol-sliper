@@ -2,16 +2,22 @@
 
 import { useEffect, useState } from "react";
 
+const INFO_WEBHOOK = "https://myn8nbeget.su/webhook/ticket-info";
 const REDEEM_WEBHOOK = "https://myn8nbeget.su/webhook/redeem-ticket";
 
-type Status = "loading" | "active" | "redeemed" | "error" | "invalid";
+type Status = "loading" | "active" | "redeemed" | "invalid" | "error";
 
 export default function TicketPage() {
   const [status, setStatus] = useState<Status>("loading");
   const [uuid, setUuid] = useState<string | null>(null);
+
+  const [offlineToken, setOfflineToken] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [showOffline, setShowOffline] = useState(false);
+
   const [redeeming, setRedeeming] = useState(false);
 
-  // === ИНИЦИАЛИЗАЦИЯ ===
+  // === INIT: load ticket-info ===
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -24,10 +30,34 @@ export default function TicketPage() {
     }
 
     setUuid(t);
-    setStatus("active"); // ⬅️ ВАЖНО: сразу активен, НЕ ждём backend
+
+    (async () => {
+      try {
+        const res = await fetch(INFO_WEBHOOK, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ t }),
+        });
+
+        const data = await res.json();
+
+        if (data.status === "active") {
+          setStatus("active");
+          setOfflineToken(data.offline_token || null);
+          setExpiresAt(data.expires_at || null);
+        } else if (data.status === "redeemed") {
+          setStatus("redeemed");
+        } else {
+          setStatus("invalid");
+        }
+      } catch {
+        // если ticket-info недоступен — НЕ БЛОКИРУЕМ гашение
+        setStatus("active");
+      }
+    })();
   }, []);
 
-  // === ПОГАШЕНИЕ ===
+  // === REDEEM ===
   async function redeem() {
     if (!uuid || redeeming) return;
 
@@ -42,7 +72,6 @@ export default function TicketPage() {
       try {
         data = await res.json();
       } catch {
-        // если JSON не пришёл, но HTTP 200 — считаем успех
         if (res.ok) {
           setStatus("redeemed");
           return;
@@ -56,6 +85,7 @@ export default function TicketPage() {
 
       if (result === "success" || result === "already_redeemed") {
         setStatus("redeemed");
+        setShowOffline(false);
       } else {
         setStatus("error");
       }
@@ -93,8 +123,38 @@ export default function TicketPage() {
 
           <p style={styles.hint}>
             Нажимайте только на кассе<br />
-            Кассиру достаточно увидеть экран
+            Кассир ничего не вводит
           </p>
+
+          {offlineToken && (
+            <>
+              <button
+                style={styles.link}
+                onClick={() => setShowOffline(v => !v)}
+              >
+                {showOffline ? "Скрыть аварийный код" : "Нет интернета?"}
+              </button>
+
+              {showOffline && (
+                <div style={styles.offlineBox}>
+                  <p style={styles.offlineWarn}>
+                    ⚠️ Используйте код <b>только если</b><br />
+                    кнопка «Погасить билет» не работает
+                  </p>
+
+                  <div style={styles.code}>{offlineToken}</div>
+
+                  {expiresAt && (
+                    <p style={styles.offlineMeta}>
+                      Действителен до: {formatTime(expiresAt)}
+                    </p>
+                  )}
+
+                  <p style={styles.offlineMeta}>Одноразовый</p>
+                </div>
+              )}
+            </>
+          )}
         </>
       )}
 
@@ -110,12 +170,8 @@ export default function TicketPage() {
           <h1 style={styles.title}>ОШИБКА СВЯЗИ</h1>
           <p style={styles.text}>Попробуйте ещё раз</p>
 
-          <button
-            style={styles.button}
-            onClick={redeem}
-            disabled={redeeming}
-          >
-            ПОВТОРИТЬ ПОПЫТКУ
+          <button style={styles.button} onClick={redeem}>
+            ПОВТОРИТЬ
           </button>
         </>
       )}
@@ -123,7 +179,14 @@ export default function TicketPage() {
   );
 }
 
-// === СТИЛИ ===
+function formatTime(iso: string) {
+  const d = new Date(iso);
+  return `${d.getHours().toString().padStart(2, "0")}:${d
+    .getMinutes()
+    .toString()
+    .padStart(2, "0")}`;
+}
+
 const styles: Record<string, React.CSSProperties> = {
   page: {
     minHeight: "100vh",
@@ -138,18 +201,9 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "system-ui, -apple-system, sans-serif",
     gap: "16px",
   },
-  title: {
-    fontSize: "28px",
-    fontWeight: 900,
-  },
-  text: {
-    opacity: 0.8,
-  },
-  hint: {
-    fontSize: "14px",
-    opacity: 0.6,
-    marginTop: "12px",
-  },
+  title: { fontSize: "28px", fontWeight: 900 },
+  text: { opacity: 0.8 },
+  hint: { fontSize: "14px", opacity: 0.6 },
   button: {
     marginTop: "16px",
     padding: "16px 24px",
@@ -163,4 +217,28 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: "320px",
     cursor: "pointer",
   },
+  link: {
+    marginTop: "20px",
+    background: "none",
+    border: "none",
+    color: "#B8FB3C",
+    textDecoration: "underline",
+    cursor: "pointer",
+  },
+  offlineBox: {
+    marginTop: "12px",
+    padding: "14px",
+    border: "1px solid rgba(184,251,60,0.6)",
+    borderRadius: "14px",
+    background: "rgba(255,255,255,0.05)",
+    maxWidth: "320px",
+  },
+  offlineWarn: { fontSize: "13px", opacity: 0.85 },
+  code: {
+    fontSize: "26px",
+    fontWeight: 900,
+    letterSpacing: "6px",
+    margin: "12px 0",
+  },
+  offlineMeta: { fontSize: "13px", opacity: 0.6 },
 };
