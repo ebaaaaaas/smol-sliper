@@ -12,12 +12,11 @@ export default function TicketPage() {
   const [uuid, setUuid] = useState<string | null>(null);
 
   const [offlineToken, setOfflineToken] = useState<string | null>(null);
-  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt	tf] = useState<string | null>(null);
   const [showOffline, setShowOffline] = useState(false);
-
   const [redeeming, setRedeeming] = useState(false);
 
-  // === INIT: load ticket-info ===
+  // === INIT: ticket-info ===
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -39,20 +38,25 @@ export default function TicketPage() {
           body: JSON.stringify({ t }),
         });
 
-        const data = await res.json();
+        const raw = await res.json();
+        const data = Array.isArray(raw) ? raw[0] : raw;
+
+        if (!data || !data.status) {
+          setStatus("invalid");
+          return;
+        }
 
         if (data.status === "active") {
           setStatus("active");
-          setOfflineToken(data.offline_token || null);
-          setExpiresAt(data.expires_at || null);
+          setOfflineToken(data.offline_token ?? null);
+          setExpiresAt(data.expires_at ?? null);
         } else if (data.status === "redeemed") {
           setStatus("redeemed");
         } else {
           setStatus("invalid");
         }
       } catch {
-        // если ticket-info недоступен — НЕ БЛОКИРУЕМ гашение
-        setStatus("active");
+        setStatus("error");
       }
     })();
   }, []);
@@ -68,22 +72,10 @@ export default function TicketPage() {
         method: "POST",
       });
 
-      let data: any = null;
-      try {
-        data = await res.json();
-      } catch {
-        if (res.ok) {
-          setStatus("redeemed");
-          return;
-        }
-        throw new Error("no json");
-      }
+      const raw = await res.json();
+      const data = Array.isArray(raw) ? raw[0] : raw;
 
-      const result = Array.isArray(data)
-        ? data[0]?.result
-        : data?.result;
-
-      if (result === "success" || result === "already_redeemed") {
+      if (data?.result === "success" || data?.result === "already_redeemed") {
         setStatus("redeemed");
         setShowOffline(false);
       } else {
@@ -96,7 +88,6 @@ export default function TicketPage() {
     }
   }
 
-  // === UI ===
   return (
     <div style={styles.page}>
       {status === "loading" && <p>Загрузка…</p>}
@@ -123,7 +114,7 @@ export default function TicketPage() {
 
           <p style={styles.hint}>
             Нажимайте только на кассе<br />
-            Кассир ничего не вводит
+            Кассиру ничего вводить не нужно
           </p>
 
           {offlineToken && (
@@ -138,15 +129,15 @@ export default function TicketPage() {
               {showOffline && (
                 <div style={styles.offlineBox}>
                   <p style={styles.offlineWarn}>
-                    ⚠️ Используйте код <b>только если</b><br />
-                    кнопка «Погасить билет» не работает
+                    Используйте код <b>только</b> если<br />
+                    кнопка не работает
                   </p>
 
                   <div style={styles.code}>{offlineToken}</div>
 
                   {expiresAt && (
                     <p style={styles.offlineMeta}>
-                      Действителен до: {formatTime(expiresAt)}
+                      Действителен до {formatTime(expiresAt)}
                     </p>
                   )}
 
@@ -161,7 +152,7 @@ export default function TicketPage() {
       {status === "redeemed" && (
         <>
           <h1 style={styles.title}>БИЛЕТ ИСПОЛЬЗОВАН</h1>
-          <p style={styles.text}>Повторное использование невозможно</p>
+          <p style={styles.text}>Повтор невозможен</p>
         </>
       )}
 
@@ -198,8 +189,8 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     padding: "24px",
     textAlign: "center",
-    fontFamily: "system-ui, -apple-system, sans-serif",
     gap: "16px",
+    fontFamily: "system-ui, -apple-system, sans-serif",
   },
   title: { fontSize: "28px", fontWeight: 900 },
   text: { opacity: 0.8 },
