@@ -12,7 +12,8 @@ export default function TicketPage() {
   const [uuid, setUuid] = useState<string | null>(null);
 
   const [offlineToken, setOfflineToken] = useState<string | null>(null);
-  const [expiresAt, setExpiresAt	tf] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+
   const [showOffline, setShowOffline] = useState(false);
   const [redeeming, setRedeeming] = useState(false);
 
@@ -129,8 +130,7 @@ export default function TicketPage() {
               {showOffline && (
                 <div style={styles.offlineBox}>
                   <p style={styles.offlineWarn}>
-                    Используйте код <b>только</b> если<br />
-                    кнопка не работает
+                    Используйте код <b>только</b> если кнопка не работает
                   </p>
 
                   <div style={styles.code}>{offlineToken}</div>
