@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 const INFO_WEBHOOK = "https://myn8nbeget.su/webhook/ticket-info";
 const REDEEM_WEBHOOK = "https://myn8nbeget.su/webhook/redeem-ticket";
 
-type Status = "loading" | "active" | "redeemed" | "invalid" | "error";
+type Status = "loading" | "active" | "redeeming" | "redeemed" | "invalid" | "error";
 
 function normalize(v: any): string | null {
   if (typeof v !== "string") return null;
@@ -18,11 +18,9 @@ export default function TicketPage() {
 
   const [offlineToken, setOfflineToken] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
-
   const [showOffline, setShowOffline] = useState(false);
-  const [redeeming, setRedeeming] = useState(false);
 
-  // === INIT: ticket-info ===
+  // === INIT ===
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const t = params.get("t");
@@ -64,34 +62,28 @@ export default function TicketPage() {
 
   // === REDEEM ===
   async function redeem() {
-    if (!uuid || redeeming) return;
+    if (!uuid || status === "redeeming") return;
 
-    setRedeeming(true);
+    setStatus("redeeming");
 
     try {
-      const res = await fetch(`${REDEEM_WEBHOOK}?t=${uuid}`, {
-        method: "POST",
-      });
-
+      const res = await fetch(`${REDEEM_WEBHOOK}?t=${uuid}`, { method: "POST" });
       const raw = await res.json();
       const data = Array.isArray(raw) ? raw[0] : raw;
 
       if (data?.result === "success" || data?.result === "already_redeemed") {
-        setStatus("redeemed");
-        setShowOffline(false);
+        setTimeout(() => setStatus("redeemed"), 900); // даём анимации доиграть
       } else {
         setStatus("error");
       }
     } catch {
       setStatus("error");
-    } finally {
-      setRedeeming(false);
     }
   }
 
   return (
     <div style={styles.page}>
-      {status === "loading" && <p>Загрузка…</p>}
+      {status === "loading" && <p style={styles.text}>Загрузка…</p>}
 
       {status === "invalid" && (
         <>
@@ -105,8 +97,8 @@ export default function TicketPage() {
           <h1 style={styles.title}>АКТИВЕН</h1>
           <p style={styles.text}>Покажите этот экран на кассе</p>
 
-          <button style={styles.button} onClick={redeem} disabled={redeeming}>
-            {redeeming ? "ПРОВЕРКА…" : "ПОГАСИТЬ БИЛЕТ"}
+          <button style={styles.button} onClick={redeem}>
+            ПОГАСИТЬ БИЛЕТ
           </button>
 
           <p style={styles.hint}>
@@ -125,15 +117,12 @@ export default function TicketPage() {
                   <p style={styles.offlineWarn}>
                     Используйте код <b>только</b> если кнопка не работает
                   </p>
-
                   <div style={styles.code}>{offlineToken}</div>
-
                   {expiresAt && (
                     <p style={styles.offlineMeta}>
                       Действителен до {formatTime(expiresAt)}
                     </p>
                   )}
-
                   <p style={styles.offlineMeta}>Одноразовый</p>
                 </div>
               )}
@@ -142,17 +131,26 @@ export default function TicketPage() {
         </>
       )}
 
+      {status === "redeeming" && (
+        <div style={styles.boom}>
+          <div style={styles.pulse} />
+          <h1 style={styles.success}>🔥 ГОТОВО</h1>
+          <p style={styles.text}>Билет активирован</p>
+        </div>
+      )}
+
       {status === "redeemed" && (
         <>
-          <h1 style={styles.title}>БИЛЕТ ИСПОЛЬЗОВАН</h1>
-          <p style={styles.text}>Повтор невозможен</p>
+          <h1 style={styles.success}>🎉 БИЛЕТ ПОГАШЕН</h1>
+          <p style={styles.text}>Ты только что использовал этот дроп</p>
+          <p style={styles.hint}>Повтор невозможен</p>
         </>
       )}
 
       {status === "error" && (
         <>
           <h1 style={styles.title}>ОШИБКА СВЯЗИ</h1>
-          <p style={styles.text}>Попробуйте ещё раз</p>
+          <p style={styles.text}>Обновите страницу и попробуйте ещё раз</p>
         </>
       )}
     </div>
@@ -181,22 +179,28 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "16px",
     fontFamily: "system-ui, -apple-system, sans-serif",
   },
+
   title: { fontSize: "28px", fontWeight: 900 },
-  text: { opacity: 0.8 },
+  success: { fontSize: "30px", fontWeight: 900, color: "#B8FB3C" },
+
+  text: { opacity: 0.85 },
   hint: { fontSize: "14px", opacity: 0.6 },
+
   button: {
-    marginTop: "16px",
-    padding: "16px 24px",
+    marginTop: "20px",
+    padding: "18px 24px",
     fontSize: "18px",
     fontWeight: 900,
     background: "#B8FB3C",
     color: "#000B3B",
     border: "none",
-    borderRadius: "14px",
+    borderRadius: "16px",
     width: "100%",
     maxWidth: "320px",
     cursor: "pointer",
+    transition: "transform .15s ease",
   },
+
   link: {
     marginTop: "20px",
     background: "none",
@@ -205,6 +209,7 @@ const styles: Record<string, React.CSSProperties> = {
     textDecoration: "underline",
     cursor: "pointer",
   },
+
   offlineBox: {
     marginTop: "12px",
     padding: "14px",
@@ -213,12 +218,31 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(255,255,255,0.05)",
     maxWidth: "320px",
   },
+
   offlineWarn: { fontSize: "13px", opacity: 0.85 },
   code: {
-    fontSize: "26px",
+    fontSize: "28px",
     fontWeight: 900,
     letterSpacing: "6px",
     margin: "12px 0",
+    color: "#B8FB3C",
   },
   offlineMeta: { fontSize: "13px", opacity: 0.6 },
+
+  boom: {
+    position: "relative",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "12px",
+  },
+
+  pulse: {
+    position: "absolute",
+    width: "180px",
+    height: "180px",
+    borderRadius: "50%",
+    background: "rgba(184,251,60,0.25)",
+    animation: "pulse 0.8s ease-out",
+  },
 };
