@@ -22,7 +22,7 @@ export default function TicketPage() {
   const [showOffline, setShowOffline] = useState(false);
   const [redeeming, setRedeeming] = useState(false);
 
-  // ===== INIT =====
+  // === INIT ===
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const t = params.get("t");
@@ -62,7 +62,7 @@ export default function TicketPage() {
     })();
   }, []);
 
-  // ===== REDEEM =====
+  // === REDEEM ===
   async function redeem() {
     if (!uuid || redeeming) return;
 
@@ -120,7 +120,7 @@ export default function TicketPage() {
                 style={styles.link}
                 onClick={() => setShowOffline(v => !v)}
               >
-                {showOffline ? "Скрыть аварийный код" : "Нет интернета?"}
+                {showOffline ? "Скрыть аварийный код" : "Скрыть аварийный код"}
               </button>
 
               {showOffline && (
@@ -189,9 +189,11 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "16px",
     fontFamily: "system-ui, -apple-system, sans-serif",
   },
+
   title: { fontSize: "28px", fontWeight: 900 },
   text: { opacity: 0.8 },
   hint: { fontSize: "14px", opacity: 0.6 },
+
   button: {
     marginTop: "16px",
     padding: "16px 24px",
@@ -205,6 +207,7 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: "320px",
     cursor: "pointer",
   },
+
   link: {
     marginTop: "20px",
     background: "none",
@@ -213,6 +216,7 @@ const styles: Record<string, React.CSSProperties> = {
     textDecoration: "underline",
     cursor: "pointer",
   },
+
   offlineBox: {
     marginTop: "12px",
     padding: "14px",
@@ -221,34 +225,43 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(255,255,255,0.05)",
     maxWidth: "320px",
   },
+
   offlineWarn: { fontSize: "13px", opacity: 0.85 },
+
+  // 🔥 ВАЖНО: цвет кода
   code: {
-    fontSize: "26px",
+    fontSize: "28px",
     fontWeight: 900,
     letterSpacing: "6px",
     margin: "12px 0",
+    color: "#B8FB3C",
+    textShadow: "0 0 18px rgba(184,251,60,0.45)",
   },
+
   offlineMeta: { fontSize: "13px", opacity: 0.6 },
 
-  // ===== FINAL =====
+  // === FINAL SCREEN ===
   final: {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     gap: "12px",
   },
+
   check: {
     fontSize: "64px",
     fontWeight: 900,
     color: "#B8FB3C",
     textShadow: "0 0 32px rgba(184,251,60,0.6)",
   },
+
   successGlow: {
     fontSize: "28px",
     fontWeight: 900,
     color: "#B8FB3C",
     textShadow: "0 0 24px rgba(184,251,60,0.4)",
   },
+
   finalText: {
     fontSize: "15px",
     opacity: 0.85,
