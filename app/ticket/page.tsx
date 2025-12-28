@@ -21,7 +21,6 @@ export default function TicketPage() {
 
   const [showOffline, setShowOffline] = useState(false);
 
-  // === INIT ===
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const t = params.get("t");
@@ -61,17 +60,13 @@ export default function TicketPage() {
     })();
   }, []);
 
-  // === REDEEM ===
   async function redeem() {
     if (!uuid || status === "redeeming") return;
 
     setStatus("redeeming");
 
     try {
-      const res = await fetch(`${REDEEM_WEBHOOK}?t=${uuid}`, {
-        method: "POST",
-      });
-
+      const res = await fetch(`${REDEEM_WEBHOOK}?t=${uuid}`, { method: "POST" });
       const raw = await res.json();
       const data = Array.isArray(raw) ? raw[0] : raw;
 
@@ -149,10 +144,14 @@ export default function TicketPage() {
       )}
 
       {status === "redeemed" && (
-        <>
-          <h1 style={styles.title}>БИЛЕТ ИСПОЛЬЗОВАН</h1>
-          <p style={styles.text}>Повтор невозможен</p>
-        </>
+        <div style={styles.final}>
+          <h1 style={styles.successGlow}>✔ ИСПОЛЬЗОВАНО</h1>
+          <p style={styles.finalText}>
+            Спасибо, что пришли 🙌  
+            <br />
+            Ждём вас в следующем дропе
+          </p>
+        </div>
       )}
 
       {status === "error" && (
@@ -164,14 +163,8 @@ export default function TicketPage() {
 
       <style>{`
         @keyframes pop {
-          0% {
-            transform: scale(0.92);
-            opacity: 0;
-          }
-          100% {
-            transform: scale(1);
-            opacity: 1;
-          }
+          0% { transform: scale(0.92); opacity: 0; }
+          100% { transform: scale(1); opacity: 1; }
         }
       `}</style>
     </div>
@@ -200,17 +193,9 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "16px",
     fontFamily: "system-ui, -apple-system, sans-serif",
   },
-  title: {
-    fontSize: "28px",
-    fontWeight: 900,
-  },
-  text: {
-    opacity: 0.85,
-  },
-  hint: {
-    fontSize: "14px",
-    opacity: 0.6,
-  },
+  title: { fontSize: "28px", fontWeight: 900 },
+  text: { opacity: 0.85 },
+  hint: { fontSize: "14px", opacity: 0.6 },
   button: {
     marginTop: "16px",
     padding: "16px 24px",
@@ -240,20 +225,15 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(255,255,255,0.05)",
     maxWidth: "320px",
   },
-  offlineWarn: {
-    fontSize: "13px",
-    opacity: 0.85,
-  },
+  offlineWarn: { fontSize: "13px", opacity: 0.85 },
   code: {
     fontSize: "26px",
     fontWeight: 900,
     letterSpacing: "6px",
     margin: "12px 0",
   },
-  offlineMeta: {
-    fontSize: "13px",
-    opacity: 0.6,
-  },
+  offlineMeta: { fontSize: "13px", opacity: 0.6 },
+
   redeemDone: {
     display: "flex",
     flexDirection: "column",
@@ -266,5 +246,16 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 900,
     color: "#B8FB3C",
     textShadow: "0 0 24px rgba(184,251,60,0.6)",
+  },
+  final: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+    animation: "pop 0.6s ease-out",
+  },
+  finalText: {
+    fontSize: "16px",
+    opacity: 0.8,
+    lineHeight: 1.4,
   },
 };
