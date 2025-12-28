@@ -18,6 +18,7 @@ export default function TicketPage() {
 
   const [offlineToken, setOfflineToken] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
+
   const [showOffline, setShowOffline] = useState(false);
 
   // === INIT ===
@@ -67,12 +68,18 @@ export default function TicketPage() {
     setStatus("redeeming");
 
     try {
-      const res = await fetch(`${REDEEM_WEBHOOK}?t=${uuid}`, { method: "POST" });
+      const res = await fetch(`${REDEEM_WEBHOOK}?t=${uuid}`, {
+        method: "POST",
+      });
+
       const raw = await res.json();
       const data = Array.isArray(raw) ? raw[0] : raw;
 
       if (data?.result === "success" || data?.result === "already_redeemed") {
-        setTimeout(() => setStatus("redeemed"), 900); // даём анимации доиграть
+        setTimeout(() => {
+          setStatus("redeemed");
+          setShowOffline(false);
+        }, 600);
       } else {
         setStatus("error");
       }
@@ -117,12 +124,15 @@ export default function TicketPage() {
                   <p style={styles.offlineWarn}>
                     Используйте код <b>только</b> если кнопка не работает
                   </p>
+
                   <div style={styles.code}>{offlineToken}</div>
+
                   {expiresAt && (
                     <p style={styles.offlineMeta}>
                       Действителен до {formatTime(expiresAt)}
                     </p>
                   )}
+
                   <p style={styles.offlineMeta}>Одноразовый</p>
                 </div>
               )}
@@ -132,27 +142,38 @@ export default function TicketPage() {
       )}
 
       {status === "redeeming" && (
-        <div style={styles.boom}>
-          <div style={styles.pulse} />
-          <h1 style={styles.success}>🔥 ГОТОВО</h1>
+        <div style={styles.redeemDone}>
+          <h1 style={styles.successGlow}>🔥 ГОТОВО</h1>
           <p style={styles.text}>Билет активирован</p>
         </div>
       )}
 
       {status === "redeemed" && (
         <>
-          <h1 style={styles.success}>🎉 БИЛЕТ ПОГАШЕН</h1>
-          <p style={styles.text}>Ты только что использовал этот дроп</p>
-          <p style={styles.hint}>Повтор невозможен</p>
+          <h1 style={styles.title}>БИЛЕТ ИСПОЛЬЗОВАН</h1>
+          <p style={styles.text}>Повтор невозможен</p>
         </>
       )}
 
       {status === "error" && (
         <>
           <h1 style={styles.title}>ОШИБКА СВЯЗИ</h1>
-          <p style={styles.text}>Обновите страницу и попробуйте ещё раз</p>
+          <p style={styles.text}>Попробуйте ещё раз</p>
         </>
       )}
+
+      <style>{`
+        @keyframes pop {
+          0% {
+            transform: scale(0.92);
+            opacity: 0;
+          }
+          100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+        }
+      `}</style>
     </div>
   );
 }
@@ -179,28 +200,30 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "16px",
     fontFamily: "system-ui, -apple-system, sans-serif",
   },
-
-  title: { fontSize: "28px", fontWeight: 900 },
-  success: { fontSize: "30px", fontWeight: 900, color: "#B8FB3C" },
-
-  text: { opacity: 0.85 },
-  hint: { fontSize: "14px", opacity: 0.6 },
-
+  title: {
+    fontSize: "28px",
+    fontWeight: 900,
+  },
+  text: {
+    opacity: 0.85,
+  },
+  hint: {
+    fontSize: "14px",
+    opacity: 0.6,
+  },
   button: {
-    marginTop: "20px",
-    padding: "18px 24px",
+    marginTop: "16px",
+    padding: "16px 24px",
     fontSize: "18px",
     fontWeight: 900,
     background: "#B8FB3C",
     color: "#000B3B",
     border: "none",
-    borderRadius: "16px",
+    borderRadius: "14px",
     width: "100%",
     maxWidth: "320px",
     cursor: "pointer",
-    transition: "transform .15s ease",
   },
-
   link: {
     marginTop: "20px",
     background: "none",
@@ -209,7 +232,6 @@ const styles: Record<string, React.CSSProperties> = {
     textDecoration: "underline",
     cursor: "pointer",
   },
-
   offlineBox: {
     marginTop: "12px",
     padding: "14px",
@@ -218,31 +240,31 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(255,255,255,0.05)",
     maxWidth: "320px",
   },
-
-  offlineWarn: { fontSize: "13px", opacity: 0.85 },
+  offlineWarn: {
+    fontSize: "13px",
+    opacity: 0.85,
+  },
   code: {
-    fontSize: "28px",
+    fontSize: "26px",
     fontWeight: 900,
     letterSpacing: "6px",
     margin: "12px 0",
-    color: "#B8FB3C",
   },
-  offlineMeta: { fontSize: "13px", opacity: 0.6 },
-
-  boom: {
-    position: "relative",
+  offlineMeta: {
+    fontSize: "13px",
+    opacity: 0.6,
+  },
+  redeemDone: {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     gap: "12px",
+    animation: "pop 0.6s ease-out",
   },
-
-  pulse: {
-    position: "absolute",
-    width: "180px",
-    height: "180px",
-    borderRadius: "50%",
-    background: "rgba(184,251,60,0.25)",
-    animation: "pulse 0.8s ease-out",
+  successGlow: {
+    fontSize: "32px",
+    fontWeight: 900,
+    color: "#B8FB3C",
+    textShadow: "0 0 24px rgba(184,251,60,0.6)",
   },
 };
