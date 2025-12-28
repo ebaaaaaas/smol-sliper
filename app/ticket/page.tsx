@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 const INFO_WEBHOOK = "https://myn8nbeget.su/webhook/ticket-info";
 const REDEEM_WEBHOOK = "https://myn8nbeget.su/webhook/redeem-ticket";
 
-type Status = "loading" | "active" | "redeeming" | "redeemed" | "invalid" | "error";
+type Status = "loading" | "active" | "redeemed" | "invalid" | "error";
 
 function normalize(v: any): string | null {
   if (typeof v !== "string") return null;
@@ -20,7 +20,9 @@ export default function TicketPage() {
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
 
   const [showOffline, setShowOffline] = useState(false);
+  const [redeeming, setRedeeming] = useState(false);
 
+  // ===== INIT =====
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const t = params.get("t");
@@ -60,26 +62,29 @@ export default function TicketPage() {
     })();
   }, []);
 
+  // ===== REDEEM =====
   async function redeem() {
-    if (!uuid || status === "redeeming") return;
+    if (!uuid || redeeming) return;
 
-    setStatus("redeeming");
+    setRedeeming(true);
 
     try {
-      const res = await fetch(`${REDEEM_WEBHOOK}?t=${uuid}`, { method: "POST" });
+      const res = await fetch(`${REDEEM_WEBHOOK}?t=${uuid}`, {
+        method: "POST",
+      });
+
       const raw = await res.json();
       const data = Array.isArray(raw) ? raw[0] : raw;
 
       if (data?.result === "success" || data?.result === "already_redeemed") {
-        setTimeout(() => {
-          setStatus("redeemed");
-          setShowOffline(false);
-        }, 600);
+        setStatus("redeemed");
       } else {
         setStatus("error");
       }
     } catch {
       setStatus("error");
+    } finally {
+      setRedeeming(false);
     }
   }
 
@@ -99,18 +104,22 @@ export default function TicketPage() {
           <h1 style={styles.title}>АКТИВЕН</h1>
           <p style={styles.text}>Покажите этот экран на кассе</p>
 
-          <button style={styles.button} onClick={redeem}>
-            ПОГАСИТЬ БИЛЕТ
+          <button style={styles.button} onClick={redeem} disabled={redeeming}>
+            {redeeming ? "ПРОВЕРКА…" : "ПОГАСИТЬ БИЛЕТ"}
           </button>
 
           <p style={styles.hint}>
-            Нажимайте только на кассе<br />
+            Нажимайте только на кассе
+            <br />
             Кассиру ничего вводить не нужно
           </p>
 
           {offlineToken && (
             <>
-              <button style={styles.link} onClick={() => setShowOffline(v => !v)}>
+              <button
+                style={styles.link}
+                onClick={() => setShowOffline(v => !v)}
+              >
                 {showOffline ? "Скрыть аварийный код" : "Нет интернета?"}
               </button>
 
@@ -136,18 +145,12 @@ export default function TicketPage() {
         </>
       )}
 
-      {status === "redeeming" && (
-        <div style={styles.redeemDone}>
-          <h1 style={styles.successGlow}>🔥 ГОТОВО</h1>
-          <p style={styles.text}>Билет активирован</p>
-        </div>
-      )}
-
       {status === "redeemed" && (
         <div style={styles.final}>
-          <h1 style={styles.successGlow}>✔ ИСПОЛЬЗОВАНО</h1>
+          <div style={styles.check}>✓</div>
+          <h1 style={styles.successGlow}>ИСПОЛЬЗОВАНО</h1>
           <p style={styles.finalText}>
-            Спасибо, что пришли 🙌  
+            Спасибо, что пришли 🙌
             <br />
             Ждём вас в следующем дропе
           </p>
@@ -160,13 +163,6 @@ export default function TicketPage() {
           <p style={styles.text}>Попробуйте ещё раз</p>
         </>
       )}
-
-      <style>{`
-        @keyframes pop {
-          0% { transform: scale(0.92); opacity: 0; }
-          100% { transform: scale(1); opacity: 1; }
-        }
-      `}</style>
     </div>
   );
 }
@@ -194,7 +190,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "system-ui, -apple-system, sans-serif",
   },
   title: { fontSize: "28px", fontWeight: 900 },
-  text: { opacity: 0.85 },
+  text: { opacity: 0.8 },
   hint: { fontSize: "14px", opacity: 0.6 },
   button: {
     marginTop: "16px",
@@ -234,28 +230,27 @@ const styles: Record<string, React.CSSProperties> = {
   },
   offlineMeta: { fontSize: "13px", opacity: 0.6 },
 
-  redeemDone: {
+  // ===== FINAL =====
+  final: {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     gap: "12px",
-    animation: "pop 0.6s ease-out",
   },
-  successGlow: {
-    fontSize: "32px",
+  check: {
+    fontSize: "64px",
     fontWeight: 900,
     color: "#B8FB3C",
-    textShadow: "0 0 24px rgba(184,251,60,0.6)",
+    textShadow: "0 0 32px rgba(184,251,60,0.6)",
   },
-  final: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-    animation: "pop 0.6s ease-out",
+  successGlow: {
+    fontSize: "28px",
+    fontWeight: 900,
+    color: "#B8FB3C",
+    textShadow: "0 0 24px rgba(184,251,60,0.4)",
   },
   finalText: {
-    fontSize: "16px",
-    opacity: 0.8,
-    lineHeight: 1.4,
+    fontSize: "15px",
+    opacity: 0.85,
   },
 };
