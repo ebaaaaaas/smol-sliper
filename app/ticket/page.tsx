@@ -15,18 +15,14 @@ function normalize(v: any): string | null {
 export default function TicketPage() {
   const [status, setStatus] = useState<Status>("loading");
   const [uuid, setUuid] = useState<string | null>(null);
-
   const [offlineToken, setOfflineToken] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
-
   const [showOffline, setShowOffline] = useState(false);
   const [redeeming, setRedeeming] = useState(false);
 
-  // === INIT ===
+  // INIT
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const t = params.get("t");
-
+    const t = new URLSearchParams(window.location.search).get("t");
     if (!t) {
       setStatus("invalid");
       return;
@@ -62,22 +58,19 @@ export default function TicketPage() {
     })();
   }, []);
 
-  // === REDEEM ===
+  // REDEEM
   async function redeem() {
     if (!uuid || redeeming) return;
-
     setRedeeming(true);
 
     try {
-      const res = await fetch(`${REDEEM_WEBHOOK}?t=${uuid}`, {
-        method: "POST",
-      });
-
+      const res = await fetch(`${REDEEM_WEBHOOK}?t=${uuid}`, { method: "POST" });
       const raw = await res.json();
       const data = Array.isArray(raw) ? raw[0] : raw;
 
       if (data?.result === "success" || data?.result === "already_redeemed") {
         setStatus("redeemed");
+        setShowOffline(false);
       } else {
         setStatus("error");
       }
@@ -92,13 +85,6 @@ export default function TicketPage() {
     <div style={styles.page}>
       {status === "loading" && <p style={styles.text}>Загрузка…</p>}
 
-      {status === "invalid" && (
-        <>
-          <h1 style={styles.title}>БИЛЕТ НЕДЕЙСТВИТЕЛЕН</h1>
-          <p style={styles.text}>Ссылка повреждена</p>
-        </>
-      )}
-
       {status === "active" && (
         <>
           <h1 style={styles.title}>АКТИВЕН</h1>
@@ -109,8 +95,7 @@ export default function TicketPage() {
           </button>
 
           <p style={styles.hint}>
-            Нажимайте только на кассе
-            <br />
+            Нажимайте только на кассе<br />
             Кассиру ничего вводить не нужно
           </p>
 
@@ -120,7 +105,7 @@ export default function TicketPage() {
                 style={styles.link}
                 onClick={() => setShowOffline(v => !v)}
               >
-                {showOffline ? "Скрыть аварийный код" : "Скрыть аварийный код"}
+                {showOffline ? "Скрыть аварийный код" : "Нет интернета?"}
               </button>
 
               {showOffline && (
@@ -146,20 +131,31 @@ export default function TicketPage() {
       )}
 
       {status === "redeemed" && (
-        <div style={styles.final}>
-          <div style={styles.check}>✓</div>
-          <h1 style={styles.successGlow}>ИСПОЛЬЗОВАНО</h1>
-          <p style={styles.finalText}>
-            Спасибо, что пришли 🙌
-            <br />
+        <>
+          <div style={styles.iconSuccess}>✓</div>
+          <h1 style={styles.successTitle}>ИСПОЛЬЗОВАНО</h1>
+          <p style={styles.text}>
+            Спасибо, что пришли 🙌<br />
             Ждём вас в следующем дропе
           </p>
-        </div>
+        </>
+      )}
+
+      {status === "invalid" && (
+        <>
+          <div style={styles.iconError}>✕</div>
+          <h1 style={styles.errorTitle}>БИЛЕТ НЕДЕЙСТВИТЕЛЕН</h1>
+          <p style={styles.text}>
+            Этот билет уже использован<br />
+            или больше не активен
+          </p>
+        </>
       )}
 
       {status === "error" && (
         <>
-          <h1 style={styles.title}>ОШИБКА СВЯЗИ</h1>
+          <div style={styles.iconError}>!</div>
+          <h1 style={styles.errorTitle}>ОШИБКА СВЯЗИ</h1>
           <p style={styles.text}>Попробуйте ещё раз</p>
         </>
       )}
@@ -174,6 +170,8 @@ function formatTime(iso: string) {
     .toString()
     .padStart(2, "0")}`;
 }
+
+// ===== STYLES =====
 
 const styles: Record<string, React.CSSProperties> = {
   page: {
@@ -191,7 +189,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   title: { fontSize: "28px", fontWeight: 900 },
-  text: { opacity: 0.8 },
+  text: { opacity: 0.85, lineHeight: 1.4 },
   hint: { fontSize: "14px", opacity: 0.6 },
 
   button: {
@@ -228,42 +226,37 @@ const styles: Record<string, React.CSSProperties> = {
 
   offlineWarn: { fontSize: "13px", opacity: 0.85 },
 
-  // 🔥 ВАЖНО: цвет кода
   code: {
     fontSize: "28px",
     fontWeight: 900,
     letterSpacing: "6px",
     margin: "12px 0",
     color: "#B8FB3C",
-    textShadow: "0 0 18px rgba(184,251,60,0.45)",
   },
 
   offlineMeta: { fontSize: "13px", opacity: 0.6 },
 
-  // === FINAL SCREEN ===
-  final: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: "12px",
+  iconSuccess: {
+    fontSize: "64px",
+    color: "#B8FB3C",
+    marginBottom: "8px",
   },
 
-  check: {
+  iconError: {
     fontSize: "64px",
+    color: "#FF4D4D",
+    marginBottom: "8px",
+  },
+
+  successTitle: {
+    fontSize: "32px",
     fontWeight: 900,
     color: "#B8FB3C",
-    textShadow: "0 0 32px rgba(184,251,60,0.6)",
   },
 
-  successGlow: {
+  errorTitle: {
     fontSize: "28px",
     fontWeight: 900,
-    color: "#B8FB3C",
-    textShadow: "0 0 24px rgba(184,251,60,0.4)",
-  },
-
-  finalText: {
-    fontSize: "15px",
-    opacity: 0.85,
+    color: "#FF4D4D",
   },
 };
